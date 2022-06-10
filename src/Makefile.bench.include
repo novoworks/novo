@@ -1,0 +1,77 @@
+# Copyright (c) 2015-2016 The Bitcoin Core developers
+# Distributed under the MIT software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+bin_PROGRAMS += bench/bench_novo
+BENCH_SRCDIR = bench
+BENCH_BINARY = bench/bench_novo$(EXEEXT)
+
+RAW_TEST_FILES = \
+  bench/data/block413567.raw
+GENERATED_TEST_FILES = $(RAW_TEST_FILES:.raw=.raw.h)
+
+bench_bench_novo_SOURCES = \
+  bench/bench_novo.cpp \
+  bench/bench.cpp \
+  bench/bench.h \
+  bench/checkblock.cpp \
+  bench/checkqueue.cpp \
+  bench/Examples.cpp \
+  bench/rollingbloom.cpp \
+  bench/crypto_hash.cpp \
+  bench/ccoins_caching.cpp \
+  bench/mempool_eviction.cpp \
+  bench/base58.cpp \
+  bench/lockedpool.cpp \
+  bench/perf.cpp \
+  bench/perf.h
+
+nodist_bench_bench_novo_SOURCES = $(GENERATED_TEST_FILES)
+
+bench_bench_novo_CPPFLAGS = $(AM_CPPFLAGS) $(NOVO_INCLUDES) $(EVENT_CLFAGS) $(EVENT_PTHREADS_CFLAGS) -I$(builddir)/bench/
+bench_bench_novo_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+bench_bench_novo_LDADD = \
+  $(LIBNOVO_SERVER) \
+  $(LIBNOVO_COMMON) \
+  $(LIBNOVO_UTIL) \
+  $(LIBNOVO_CONSENSUS) \
+  $(LIBNOVO_CRYPTO) \
+  $(LIBLEVELDB) \
+  $(LIBMEMENV) \
+  $(LIBSECP256K1) \
+  $(LIBUNIVALUE)
+
+if ENABLE_ZMQ
+bench_bench_novo_LDADD += $(LIBNOVO_ZMQ) $(ZMQ_LIBS)
+endif
+
+if ENABLE_WALLET
+bench_bench_novo_SOURCES += bench/coin_selection.cpp
+bench_bench_novo_LDADD += $(LIBNOVO_WALLET) $(LIBNOVO_CRYPTO)
+endif
+
+bench_bench_novo_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS)
+bench_bench_novo_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+
+CLEAN_NOVO_BENCH = bench/*.gcda bench/*.gcno $(GENERATED_TEST_FILES)
+
+CLEANFILES += $(CLEAN_NOVO_BENCH)
+
+bench/checkblock.cpp: bench/data/block413567.raw.h
+
+novo_bench: $(BENCH_BINARY)
+
+bench: $(BENCH_BINARY) FORCE
+	$(BENCH_BINARY)
+
+novo_bench_clean : FORCE
+	rm -f $(CLEAN_NOVO_BENCH) $(bench_bench_novo_OBJECTS) $(BENCH_BINARY)
+
+%.raw.h: %.raw
+	@$(MKDIR_P) $(@D)
+	@{ \
+	 echo "static unsigned const char $(*F)[] = {" && \
+	 $(HEXDUMP) -v -e '8/1 "0x%02x, "' -e '"\n"' $< | $(SED) -e 's/0x  ,//g' && \
+	 echo "};"; \
+	} > "$@.new" && mv -f "$@.new" "$@"
+	@echo "Generated $@"
