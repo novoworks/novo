@@ -5,7 +5,6 @@
 
 #include "validation.h"
 
-#include "alert.h"
 #include "arith_uint256.h"
 #include "chainparams.h"
 #include "checkpoints.h"
@@ -76,7 +75,6 @@ bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
 size_t nCoinCacheUsage = 5000 * 300;
 uint64_t nPruneTarget = 0;
-bool fAlerts = DEFAULT_ALERTS;
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 bool fEnableReplacement = DEFAULT_ENABLE_REPLACEMENT;
 
@@ -316,21 +314,6 @@ static std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, in
     return std::make_pair(nMinHeight, nMinTime);
 }
 
-static bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64_t> lockPair)
-{
-    assert(block.pprev);
-    int64_t nBlockTime = block.pprev->GetMedianTimePast();
-    if (lockPair.first >= block.nHeight || lockPair.second >= nBlockTime)
-        return false;
-
-    return true;
-}
-
-bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int>* prevHeights, const CBlockIndex& block)
-{
-    return EvaluateSequenceLocks(block, CalculateSequenceLocks(tx, flags, prevHeights, block));
-}
-
 bool TestLockPointValidity(const LockPoints* lp)
 {
     AssertLockHeld(cs_main);
@@ -347,76 +330,6 @@ bool TestLockPointValidity(const LockPoints* lp)
 
     // LockPoints still valid
     return true;
-}
-
-bool CheckSequenceLocks(const CTransaction &tx, int flags, LockPoints* lp, bool useExistingLockPoints)
-{
-    AssertLockHeld(cs_main);
-    AssertLockHeld(mempool.cs);
-
-    CBlockIndex* tip = chainActive.Tip();
-    CBlockIndex index;
-    index.pprev = tip;
-    // CheckSequenceLocks() uses chainActive.Height()+1 to evaluate
-    // height based locks because when SequenceLocks() is called within
-    // ConnectBlock(), the height of the block *being*
-    // evaluated is what is used.
-    // Thus if we want to know if a transaction can be part of the
-    // *next* block, we need to use one more than chainActive.Height()
-    index.nHeight = tip->nHeight + 1;
-
-    std::pair<int, int64_t> lockPair;
-    if (useExistingLockPoints) {
-        assert(lp);
-        lockPair.first = lp->height;
-        lockPair.second = lp->time;
-    }
-    else {
-        // pcoinsTip contains the UTXO set for chainActive.Tip()
-        CCoinsViewMemPool viewMemPool(pcoinsTip, mempool);
-        std::vector<int> prevheights;
-        prevheights.resize(tx.vin.size());
-        for (size_t txinIndex = 0; txinIndex < tx.vin.size(); txinIndex++) {
-            const CTxIn& txin = tx.vin[txinIndex];
-            CCoins coins;
-            if (!viewMemPool.GetCoins(txin.prevout.hash, coins)) {
-                return error("%s: Missing input", __func__);
-            }
-            if (coins.nHeight == MEMPOOL_HEIGHT) {
-                // Assume all mempool transaction confirm in the next block
-                prevheights[txinIndex] = tip->nHeight + 1;
-            } else {
-                prevheights[txinIndex] = coins.nHeight;
-            }
-        }
-        lockPair = CalculateSequenceLocks(tx, flags, &prevheights, index);
-        if (lp) {
-            lp->height = lockPair.first;
-            lp->time = lockPair.second;
-            // Also store the hash of the block with the highest height of
-            // all the blocks which have sequence locked prevouts.
-            // This hash needs to still be on the chain
-            // for these LockPoint calculations to be valid
-            // Note: It is impossible to correctly calculate a maxInputBlock
-            // if any of the sequence locked inputs depend on unconfirmed txs,
-            // except in the special case where the relative lock time/height
-            // is 0, which is equivalent to no sequence lock. Since we assume
-            // input height of tip+1 for mempool txs and test the resulting
-            // lockPair from CalculateSequenceLocks against tip+1.  We know
-            // EvaluateSequenceLocks will fail if there was a non-zero sequence
-            // lock on a mempool input, so we can use the return value of
-            // CheckSequenceLocks to indicate the LockPoints validity
-            int maxInputHeight = 0;
-            BOOST_FOREACH(int height, prevheights) {
-                // Can ignore mempool inputs since we'll fail if they had non-zero locks
-                if (height != tip->nHeight+1) {
-                    maxInputHeight = std::max(maxInputHeight, height);
-                }
-            }
-            lp->maxInputBlock = tip->GetAncestor(maxInputHeight);
-        }
-    }
-    return EvaluateSequenceLocks(index, lockPair);
 }
 
 unsigned int GetTransactionSigOpCount(const CTransaction& tx)
@@ -643,13 +556,6 @@ bool AcceptToMemoryPoolWorker(CTxMemPool& pool, CValidationState& state, const C
         // we have all inputs cached now, so switch back to dummy, so we don't need to keep lock on mempool
         view.SetBackend(dummy);
 
-        // Only accept BIP68 sequence locked transactions that can be mined in the next
-        // block; we don't want our mempool filled up with transactions that can't
-        // be mined yet.
-        // Must keep pool.cs for this unless we change CheckSequenceLocks to take a
-        // CoinsViewCache instead of create its own
-        if (!CheckSequenceLocks(tx, 0, &lp))
-            return state.DoS(0, false, REJECT_NONSTANDARD, "non-BIP68-final");
         }
 
         // Check for non-standard pay-to-script-hash in inputs
@@ -913,7 +819,7 @@ bool AcceptToMemoryPoolWorker(CTxMemPool& pool, CValidationState& state, const C
         // Remove conflicting transactions from the mempool
         BOOST_FOREACH(const CTxMemPool::txiter it, allConflicting)
         {
-            LogPrint("mempool", "replacing tx %s with %s for %s BTC additional fees, %d delta bytes\n",
+            LogPrint("mempool", "replacing tx %s with %s for %s NOVO additional fees, %d delta bytes\n",
                     it->GetTx().GetHash().ToString(),
                     hash.ToString(),
                     FormatMoney(nModifiedFees - nConflictingFees),
@@ -1138,7 +1044,19 @@ CBlockIndex *pindexBestForkTip = NULL, *pindexBestForkBase = NULL;
 
 static void AlertNotify(const std::string& strMessage)
 {
-    CAlert::Notify(strMessage);
+    uiInterface.NotifyAlertChanged();
+    std::string strCmd = GetArg("-alertnotify", "");
+    if (strCmd.empty()) return;
+
+    // Alert text should be plain ascii coming from a trusted source, but to
+    // be safe we first strip anything not in safeChars, then add single quotes around
+    // the whole string before passing it to the shell:
+    std::string singleQuote("'");
+    std::string safeStatus = SanitizeString(strMessage);
+    safeStatus = singleQuote+safeStatus+singleQuote;
+    boost::replace_all(strCmd, "%s", safeStatus);
+
+    boost::thread t(runCommand, strCmd); // thread runs free
 }
 
 void CheckForkWarningConditions()
@@ -1738,9 +1656,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         flags |= SCRIPT_VERIFY_DERSIG;
     }
 
-    // Start enforcing BIP68 (sequence locks) and BIP112 (CHECKSEQUENCEVERIFY) using versionbits logic.
-    int nLockTimeFlags = 0;
-
     int64_t nTime2 = GetTimeMicros(); nTimeForks += nTime2 - nTime1;
     LogPrint("bench", "    - Fork checks: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeForks * 0.000001);
 
@@ -1770,17 +1685,9 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                 return state.DoS(100, error("ConnectBlock(): inputs missing/spent"),
                                  REJECT_INVALID, "bad-txns-inputs-missingorspent");
 
-            // Check that transaction is BIP68 final
-            // BIP68 lock checks (as opposed to nLockTime checks) must
-            // be in ConnectBlock because they require the UTXO set
             prevheights.resize(tx.vin.size());
             for (size_t j = 0; j < tx.vin.size(); j++) {
                 prevheights[j] = view.AccessCoins(tx.vin[j].prevout.hash)->nHeight;
-            }
-
-            if (!SequenceLocks(tx, nLockTimeFlags, &prevheights, *pindex)) {
-                return state.DoS(100, error("%s: contains a non-BIP68-final transaction", __func__),
-                                 REJECT_INVALID, "bad-txns-nonfinal");
             }
         }
 
@@ -1824,7 +1731,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                REJECT_INVALID, "bad-cb-amount");
 
     if (!control.Wait())
-        return state.DoS(100, false);
+        return state.DoS(100, false, REJECT_INVALID, "blk-bad-inputs", false, "parallel script check failed");
+
     int64_t nTime4 = GetTimeMicros(); nTimeVerify += nTime4 - nTime2;
     LogPrint("bench", "    - Verify %u txins: %.2fms (%.3fms/txin) [%.2fs]\n", nInputs - 1, 0.001 * (nTime4 - nTime2), nInputs <= 1 ? 0 : 0.001 * (nTime4 - nTime2) / (nInputs-1), nTimeVerify * 0.000001);
 
@@ -2853,7 +2761,7 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
     // check for version 2, 3 and 4 upgrades
     // Novo: Version 2 enforcement was never used
     if((block.nVersion < 3 && nHeight >= consensusParams.BIP66Height) ||
-       (block.nVersion < 4 && nHeight >= consensusParams.BIP65Height))
+       (block.nVersion < 4))
             return state.Invalid(false, REJECT_OBSOLETE, strprintf("bad-version(0x%08x)", block.nVersion),
                                  strprintf("rejected nVersion=0x%08x block", block.nVersion));
 

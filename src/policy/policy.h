@@ -19,26 +19,26 @@ class CCoinsViewCache;
   * All fee defaults used throughout the client derive their
   * value from this base default.
   */
-static const CAmount RECOMMENDED_MIN_TX_FEE = 80 * CENT;
+static const CAmount RECOMMENDED_MIN_TX_FEE = 8000;
 
 /** Default for -blockmaxsize, which controls the maximum size of block the mining code will create **/
 static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 8 * 1000000;
 /** Default for -blockprioritysize, maximum space for zero/low-fee transactions **/
 static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = 0;
 /** Default for -blockmintxfee, which sets the minimum feerate for a transaction in blocks created by mining code **/
-static const unsigned int DEFAULT_BLOCK_MIN_TX_FEE = (unsigned int) RECOMMENDED_MIN_TX_FEE;
+static const unsigned int DEFAULT_BLOCK_MIN_TX_FEE = 8000;
 /** The maximum size for transactions we're willing to relay/mine */
-static const unsigned int MAX_STANDARD_TX_SIZE = 7* 1000000;
-/** Maximum number of signature check operations in an IsStandard() P2SH script */
-static const unsigned int MAX_P2SH_SIGOPS = 15;
+static const unsigned int MAX_STANDARD_TX_SIZE = 8 * 1000000;
+/** The minimum size for transactions we're willing to relay/mine */
+static const unsigned int MIN_STANDARD_TX_SIZE = 65;
 /** The maximum number of sigops we're willing to relay/mine in a single tx */
 static const unsigned int MAX_STANDARD_TX_SIGOPS_COUNT = MAX_TX_SIGOPS_COUNT/5;
 /** Default for -maxmempool, maximum megabytes of mempool memory usage */
-static const unsigned int DEFAULT_MAX_MEMPOOL_SIZE = 300;
+static const unsigned int DEFAULT_MAX_MEMPOOL_SIZE = 1000;
 /** Default for -incrementalrelayfee, which sets the minimum feerate increase
  *  for mempool limiting or BIP 125 replacement
  *
- *  Novo:    Increment mempool limits and accept RBF in steps of 0.0001 DOGE
+ *  Novo:    Increment mempool limits and accept RBF in steps of 0.01 NOVO
  *  Calculation: DEFAULT_MIN_RELAY_TX_FEE = RECOMMENDED_MIN_TX_FEE / 10
  *               DEFAULT_INCREMENTAL_RELAY_FEE = DEFAULT_MIN_RELAY_TX_FEE / 10
  *
@@ -50,21 +50,16 @@ static const unsigned int DEFAULT_MAX_MEMPOOL_SIZE = 300;
  *               RBF leaves no on-chain waste, whereas CPFP adds another
  *               transaction to the chain.
  */
-static const CAmount DEFAULT_INCREMENTAL_RELAY_FEE = RECOMMENDED_MIN_TX_FEE / 100;
+static const CAmount DEFAULT_INCREMENTAL_RELAY_FEE = CENT;
 /** Default for -bytespersigop */
 static const unsigned int DEFAULT_BYTES_PER_SIGOP = 20;
-/** The maximum number of witness stack items in a standard P2WSH script */
-static const unsigned int MAX_STANDARD_P2WSH_STACK_ITEMS = 100;
-/** The maximum size of each witness stack item in a standard P2WSH script */
-static const unsigned int MAX_STANDARD_P2WSH_STACK_ITEM_SIZE = 80;
-/** The maximum size of a standard witnessScript */
-static const unsigned int MAX_STANDARD_P2WSH_SCRIPT_SIZE = 3600;
+
 /**
  * Novo: Default dust limit that is evaluated when considering whether a
  * transaction output is required to pay additional fee for relay and inclusion
  * in blocks. Overridden by -dustlimit
  */
-static const CAmount DEFAULT_DUST_LIMIT = RECOMMENDED_MIN_TX_FEE;
+static const CAmount DEFAULT_DUST_LIMIT = 4368;
 /**
  * Novo: Default hard dust limit that is evaluated when considering whether
  * a transaction is standard. Transactions under this limit will not be accepted
@@ -75,7 +70,7 @@ static const CAmount DEFAULT_DUST_LIMIT = RECOMMENDED_MIN_TX_FEE;
  * this limit after prior releases were already not creating outputs below the
  * new threshold
  */
-static const CAmount DEFAULT_HARD_DUST_LIMIT = DEFAULT_DUST_LIMIT / 10;
+static const CAmount DEFAULT_HARD_DUST_LIMIT = 4368;
 
 /**
  * Standard script verification flags that standard transactions will comply
@@ -88,10 +83,7 @@ static const unsigned int STANDARD_SCRIPT_VERIFY_FLAGS = MANDATORY_SCRIPT_VERIFY
                                                          SCRIPT_VERIFY_NULLDUMMY |
                                                          SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS |
                                                          SCRIPT_VERIFY_CLEANSTACK |
-                                                         SCRIPT_VERIFY_MINIMALIF |
-                                                         SCRIPT_VERIFY_WITNESS |
-                                                         SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM |
-                                                         SCRIPT_VERIFY_WITNESS_PUBKEYTYPE;
+                                                         SCRIPT_VERIFY_MINIMALIF;
 
 /** For convenience, standard but not mandatory verify flags. */
 static const unsigned int STANDARD_NOT_MANDATORY_VERIFY_FLAGS = STANDARD_SCRIPT_VERIFY_FLAGS & ~MANDATORY_SCRIPT_VERIFY_FLAGS;

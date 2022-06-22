@@ -81,7 +81,7 @@ CScript ParseScript(const std::string& s)
         }
         else
         {
-            throw std::runtime_error("script parse error");
+            throw std::runtime_error("script parse error: " + (*w));
         }
     }
 

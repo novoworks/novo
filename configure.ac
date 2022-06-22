@@ -15,7 +15,6 @@ AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([build-aux/m4])
 
 NOVO_DAEMON_NAME=novod
-NOVO_GUI_NAME=novo-qt
 NOVO_CLI_NAME=novo-cli
 NOVO_TX_NAME=novo-tx
 
@@ -55,7 +54,7 @@ case $host in
   ;;
 esac
 dnl Require C++11 compiler (no GNU extensions)
-AX_CXX_COMPILE_STDCXX([14], [noext], [mandatory], [nodefault])
+AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory], [nodefault])
 dnl Check if -latomic is required for <std::atomic>
 CHECK_ATOMIC
 
@@ -114,11 +113,6 @@ AC_ARG_ENABLE(tests,
     [use_tests=$enableval],
     [use_tests=yes])
 
-AC_ARG_ENABLE(gui-tests,
-    AS_HELP_STRING([--disable-gui-tests],[do not compile GUI tests (default is to compile if GUI and tests enabled)]),
-    [use_gui_tests=$enableval],
-    [use_gui_tests=$use_tests])
-
 AC_ARG_ENABLE(bench,
     AS_HELP_STRING([--disable-bench],[do not compile benchmarks (default is to compile)]),
     [use_bench=$enableval],
@@ -128,12 +122,6 @@ AC_ARG_ENABLE([extended-rpc-tests],
     AS_HELP_STRING([--enable-extended-rpc-tests],[enable expensive RPC tests when using lcov (default no)]),
     [use_extended_rpc_tests=$enableval],
     [use_extended_rpc_tests=no])
-
-AC_ARG_WITH([qrencode],
-  [AS_HELP_STRING([--with-qrencode],
-  [enable QR code support (default is yes if qt is enabled and libqrencode is found)])],
-  [use_qr=$withval],
-  [use_qr=auto])
 
 AC_ARG_ENABLE([hardening],
   [AS_HELP_STRING([--disable-hardening],
@@ -182,8 +170,6 @@ AC_ARG_WITH([intel-avx2],
   [Build with intel avx2 (default is no)])],
   [intel_avx2=$withval],
   [intel_avx2=no])
-
-AC_ARG_WITH([protoc-bindir],[AS_HELP_STRING([--with-protoc-bindir=BIN_DIR],[specify protoc bin path])], [protoc_bin_path=$withval], [])
 
 AC_ARG_ENABLE(man,
     [AS_HELP_STRING([--disable-man],
@@ -348,11 +334,10 @@ case $host in
          dnl in expected paths because they may conflict with system files. Ask
          dnl Homebrew where each one is located, then adjust paths accordingly.
          dnl It's safe to add these paths even if the functionality is disabled by
-         dnl the user (--without-wallet or --without-gui for example).
+         dnl the user (--without-wallet for example).
 
          openssl_prefix=`$BREW --prefix openssl 2>/dev/null`
          bdb_prefix=`$BREW --prefix berkeley-db 2>/dev/null`
-         qt5_prefix=`$BREW --prefix qt5 2>/dev/null`
          if test x$openssl_prefix != x; then
            PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
            export PKG_CONFIG_PATH
@@ -360,10 +345,6 @@ case $host in
          if test x$bdb_prefix != x; then
            CPPFLAGS="$CPPFLAGS -I$bdb_prefix/include"
            LIBS="$LIBS -L$bdb_prefix/lib"
-         fi
-         if test x$qt5_prefix != x; then
-           PKG_CONFIG_PATH="$qt5_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
-           export PKG_CONFIG_PATH
          fi
        fi
      else
@@ -617,12 +598,7 @@ if test x$use_upnp != xno; then
   )
 fi
 
-NOVO_QT_INIT
-
-dnl sets $novo_enable_qt, $novo_enable_qt_test, $novo_enable_qt_dbus
-NOVO_QT_CONFIGURE([$use_pkgconfig], [qt5])
-
-if test x$build_novo_utils$build_novod$novo_enable_qt$use_tests$use_bench = xnonononono; then
+if test x$build_novo_utils$build_novod$use_tests$use_bench = xnononono; then
     use_boost=no
 else
     use_boost=yes
@@ -719,7 +695,7 @@ TEMP_LIBS="$LIBS"
 LIBS="$BOOST_LIBS $LIBS"
 TEMP_CPPFLAGS="$CPPFLAGS"
 CPPFLAGS="$CPPFLAGS $BOOST_CPPFLAGS"
-AC_MSG_CHECKING([for mismatched boost c++14 scoped enums])
+AC_MSG_CHECKING([for mismatched boost c++11 scoped enums])
 AC_LINK_IFELSE([AC_LANG_PROGRAM([[
   #include "boost/config.hpp"
   #include "boost/version.hpp"
@@ -810,11 +786,7 @@ if test x$use_pkgconfig = xyes; then
     [
       PKG_CHECK_MODULES([SSL], [libssl],, [AC_MSG_ERROR(openssl  not found.)])
       PKG_CHECK_MODULES([CRYPTO], [libcrypto],,[AC_MSG_ERROR(libcrypto  not found.)])
-      NOVO_QT_CHECK([PKG_CHECK_MODULES([PROTOBUF], [protobuf], [have_protobuf=yes], [NOVO_QT_FAIL(libprotobuf not found)])])
-      if test x$use_qr != xno; then
-        NOVO_QT_CHECK([PKG_CHECK_MODULES([QR], [libqrencode], [have_qrencode=yes], [have_qrencode=no])])
-      fi
-      if test x$build_novo_utils$build_novod$novo_enable_qt$use_tests != xnononono; then
+      if test x$build_novo_utils$build_novod$use_tests != xnonono; then
         PKG_CHECK_MODULES([EVENT], [libevent],, [AC_MSG_ERROR(libevent not found.)])
         if test x$TARGET_OS != xwindows; then
           PKG_CHECK_MODULES([EVENT_PTHREADS], [libevent_pthreads],, [AC_MSG_ERROR(libevent_pthreads not found.)])
@@ -839,7 +811,7 @@ else
   AC_CHECK_HEADER([openssl/ssl.h],, AC_MSG_ERROR(libssl headers missing),)
   AC_CHECK_LIB([ssl],         [main],SSL_LIBS=-lssl, AC_MSG_ERROR(libssl missing))
 
-  if test x$build_novo_utils$build_novod$novo_enable_qt$use_tests != xnononono; then
+  if test x$build_novo_utils$build_novod$use_tests != xnonono; then
     AC_CHECK_HEADER([event2/event.h],, AC_MSG_ERROR(libevent headers missing),)
     AC_CHECK_LIB([event],[main],EVENT_LIBS=-levent,AC_MSG_ERROR(libevent missing))
     if test x$TARGET_OS != xwindows; then
@@ -869,12 +841,6 @@ else
       ;;
     esac
   fi
-
-  NOVO_QT_CHECK(AC_CHECK_LIB([protobuf] ,[main],[PROTOBUF_LIBS=-lprotobuf], NOVO_QT_FAIL(libprotobuf not found)))
-  if test x$use_qr != xno; then
-    NOVO_QT_CHECK([AC_CHECK_LIB([qrencode], [main],[QR_LIBS=-lqrencode], [have_qrencode=no])])
-    NOVO_QT_CHECK([AC_CHECK_HEADER([qrencode.h],, have_qrencode=no)])
-  fi
 fi
 
 save_CXXFLAGS="${CXXFLAGS}"
@@ -888,7 +854,7 @@ dnl univalue check
 
 need_bundled_univalue=yes
 
-if test x$build_novo_utils$build_novod$novo_enable_qt$use_tests$use_bench = xnonononono; then
+if test x$build_novo_utils$build_novod$use_tests$use_bench = xnononono; then
   need_bundled_univalue=no
 else
 
@@ -931,8 +897,6 @@ fi
 AM_CONDITIONAL([EMBEDDED_UNIVALUE],[test x$need_bundled_univalue = xyes])
 AC_SUBST(UNIVALUE_CFLAGS)
 AC_SUBST(UNIVALUE_LIBS)
-
-NOVO_QT_PATH_PROGS([PROTOC], [protoc],$protoc_bin_path)
 
 AC_MSG_CHECKING([whether to build novod])
 AM_CONDITIONAL([BUILD_NOVOD], [test x$build_novod = xyes])
@@ -1008,46 +972,6 @@ else
   fi
 fi
 
-dnl these are only used when qt is enabled
-BUILD_TEST_QT=""
-if test x$novo_enable_qt != xno; then
-  dnl enable dbus support
-  AC_MSG_CHECKING([whether to build GUI with support for D-Bus])
-  if test x$novo_enable_qt_dbus != xno; then
-    AC_DEFINE([USE_DBUS],[1],[Define if dbus support should be compiled in])
-  fi
-  AC_MSG_RESULT($novo_enable_qt_dbus)
-
-  dnl enable qr support
-  AC_MSG_CHECKING([whether to build GUI with support for QR codes])
-  if test x$have_qrencode = xno; then
-    if test x$use_qr = xyes; then
-     AC_MSG_ERROR("QR support requested but cannot be built. use --without-qrencode")
-    fi
-    AC_MSG_RESULT(no)
-  else
-    if test x$use_qr != xno; then
-      AC_MSG_RESULT(yes)
-      AC_DEFINE([USE_QRCODE],[1],[Define if QR support should be compiled in])
-      use_qr=yes
-    else
-      AC_MSG_RESULT(no)
-    fi
-  fi
-
-  if test x$XGETTEXT = x; then
-    AC_MSG_WARN("xgettext is required to update qt translations")
-  fi
-
-  AC_MSG_CHECKING([whether to build test_novo-qt])
-  if test x$use_gui_tests$novo_enable_qt_test = xyesyes; then
-    AC_MSG_RESULT([yes])
-    BUILD_TEST_QT="yes"
-  else
-    AC_MSG_RESULT([no])
-  fi
-fi
-
 AM_CONDITIONAL([ENABLE_ZMQ], [test "x$use_zmq" = "xyes"])
 
 AC_MSG_CHECKING([whether to build test_novo])
@@ -1066,8 +990,8 @@ else
   AC_MSG_RESULT([no])
 fi
 
-if test x$build_novo_utils$build_novo_libs$build_novod$novo_enable_qt$use_bench$use_tests = xnononononono; then
-  AC_MSG_ERROR([No targets! Please specify at least one of: --with-utils --with-libs --with-daemon --with-gui --enable-bench or --enable-tests])
+if test x$build_novo_utils$build_novo_libs$build_novod$use_bench$use_tests = xnonononono; then
+  AC_MSG_ERROR([No targets! Please specify at least one of: --with-utils --with-libs --with-daemon --enable-bench or --enable-tests])
 fi
 
 AM_CONDITIONAL([TARGET_DARWIN], [test x$TARGET_OS = xdarwin])
@@ -1075,10 +999,7 @@ AM_CONDITIONAL([BUILD_DARWIN], [test x$BUILD_OS = xdarwin])
 AM_CONDITIONAL([TARGET_WINDOWS], [test x$TARGET_OS = xwindows])
 AM_CONDITIONAL([ENABLE_WALLET],[test x$enable_wallet = xyes])
 AM_CONDITIONAL([ENABLE_TESTS],[test x$BUILD_TEST = xyes])
-AM_CONDITIONAL([ENABLE_QT],[test x$novo_enable_qt = xyes])
-AM_CONDITIONAL([ENABLE_QT_TESTS],[test x$BUILD_TEST_QT = xyes])
 AM_CONDITIONAL([ENABLE_BENCH],[test x$use_bench = xyes])
-AM_CONDITIONAL([USE_QRCODE], [test x$use_qr = xyes])
 AM_CONDITIONAL([USE_LCOV],[test x$use_lcov = xyes])
 AM_CONDITIONAL([GLIBC_BACK_COMPAT],[test x$use_glibc_compat = xyes])
 AM_CONDITIONAL([HARDEN],[test x$use_hardening = xyes])
@@ -1103,7 +1024,6 @@ AC_SUBST(COPYRIGHT_HOLDERS, "_COPYRIGHT_HOLDERS")
 AC_SUBST(COPYRIGHT_HOLDERS_SUBSTITUTION, "_COPYRIGHT_HOLDERS_SUBSTITUTION")
 AC_SUBST(COPYRIGHT_HOLDERS_FINAL, "_COPYRIGHT_HOLDERS_FINAL")
 AC_SUBST(NOVO_DAEMON_NAME)
-AC_SUBST(NOVO_GUI_NAME)
 AC_SUBST(NOVO_CLI_NAME)
 AC_SUBST(NOVO_TX_NAME)
 
@@ -1117,7 +1037,6 @@ AC_SUBST(PIC_FLAGS)
 AC_SUBST(PIE_FLAGS)
 AC_SUBST(LIBTOOL_APP_LDFLAGS)
 AC_SUBST(USE_UPNP)
-AC_SUBST(USE_QRCODE)
 AC_SUBST(BOOST_LIBS)
 AC_SUBST(TESTDEFS)
 AC_SUBST(LEVELDB_TARGET_FLAGS)
@@ -1128,9 +1047,7 @@ AC_SUBST(SSL_LIBS)
 AC_SUBST(EVENT_LIBS)
 AC_SUBST(EVENT_PTHREADS_LIBS)
 AC_SUBST(ZMQ_LIBS)
-AC_SUBST(PROTOBUF_LIBS)
-AC_SUBST(QR_LIBS)
-AC_CONFIG_FILES([Makefile src/Makefile doc/man/Makefile share/setup.nsi share/qt/Info.plist src/test/buildenv.py])
+AC_CONFIG_FILES([Makefile src/Makefile doc/man/Makefile share/setup.nsi src/test/buildenv.py])
 AC_CONFIG_FILES([qa/pull-tester/tests_config.py],[chmod +x qa/pull-tester/tests_config.py])
 AC_CONFIG_FILES([contrib/devtools/split-debug.sh],[chmod +x contrib/devtools/split-debug.sh])
 AC_CONFIG_LINKS([qa/pull-tester/rpc-tests.py:qa/pull-tester/rpc-tests.py])
@@ -1189,11 +1106,6 @@ esac
 echo
 echo "Options used to compile and link:"
 echo "  with wallet   = $enable_wallet"
-echo "  with gui / qt = $novo_enable_qt"
-if test x$novo_enable_qt != xno; then
-    echo "    qt version  = $novo_qt_got_major_vers"
-    echo "    with qr     = $use_qr"
-fi
 echo "  with zmq      = $use_zmq"
 echo "  with test     = $use_tests"
 echo "  with bench    = $use_bench"

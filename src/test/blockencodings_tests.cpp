@@ -29,7 +29,7 @@ static CBlock BuildBlockTestCase() {
 
     block.vtx.resize(3);
     block.vtx[0] = MakeTransactionRef(tx);
-    block.nVersion = 1;
+    block.nVersion = 42;
     block.hashPrevBlock = GetRandHash();
     block.nBits = 0x207fffff;
 

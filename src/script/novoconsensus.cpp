@@ -114,10 +114,6 @@ int novoconsensus_verify_script(const unsigned char *scriptPubKey, unsigned int 
                                    const unsigned char *txTo        , unsigned int txToLen,
                                    unsigned int nIn, unsigned int flags, novoconsensus_error* err)
 {
-    if (flags & novoconsensus_SCRIPT_FLAGS_VERIFY_WITNESS) {
-        return set_error(err, novoconsensus_ERR_AMOUNT_REQUIRED);
-    }
-
     CAmount am(0);
     return ::verify_script(scriptPubKey, scriptPubKeyLen, am, txTo, txToLen, nIn, flags, err);
 }

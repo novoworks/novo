@@ -46,8 +46,6 @@ struct Params {
     /** Block height and hash at which BIP34 becomes active */
     int BIP34Height;
     uint256 BIP34Hash;
-    /** Block height at which BIP65 becomes active */
-    int BIP65Height;
     /** Block height at which BIP66 becomes active */
     int32_t BIP66Height;
 

@@ -13,7 +13,6 @@
 #include "amount.h"
 #include "chain.h"
 #include "coins.h"
-#include "policy/policy.h" // For RECOMMENDED_MIN_TX_FEE
 #include "protocol.h" // For CMessageHeader::MessageStartChars
 #include "script/script_error.h"
 #include "sync.h"
@@ -48,37 +47,35 @@ struct ChainTxData;
 struct PrecomputedTransactionData;
 struct LockPoints;
 
-/** Default for accepting alerts from the P2P network. */
-static const bool DEFAULT_ALERTS = true;
 /** Default for DEFAULT_WHITELISTRELAY. */
 static const bool DEFAULT_WHITELISTRELAY = true;
 /** Default for DEFAULT_WHITELISTFORCERELAY. */
 static const bool DEFAULT_WHITELISTFORCERELAY = true;
 /** Default for -minrelaytxfee, minimum relay fee for transactions */
-static const CAmount DEFAULT_MIN_RELAY_TX_FEE = RECOMMENDED_MIN_TX_FEE / 10;
+static const CAmount DEFAULT_MIN_RELAY_TX_FEE = 8000;
 //! -maxtxfee default
 //rnicoll: 8/2021 scaled down as recommended fee is lowered
-static const CAmount DEFAULT_TRANSACTION_MAXFEE = RECOMMENDED_MIN_TX_FEE * 10000;
+static const CAmount DEFAULT_TRANSACTION_MAXFEE = COIN * 1000;
 
 //! Discourage users to set fees higher than this amount (in satoshis) per kB
 /* Dogecoin: Set the high tx fee to be higher than the default values
  *           implemented by the wallet.
  */
-static const CAmount HIGH_TX_FEE_PER_KB = RECOMMENDED_MIN_TX_FEE * 1000;
+static const CAmount HIGH_TX_FEE_PER_KB = COIN * 100;
 
 //! -maxtxfee will warn if called with a higher fee than this amount (in satoshis)
 //mlumin: 5/2021 adjusted max upward in terms of coin
 static const CAmount HIGH_MAX_TX_FEE = 100 * HIGH_TX_FEE_PER_KB;
 /** Default for -limitancestorcount, max number of in-mempool ancestors */
-static const unsigned int DEFAULT_ANCESTOR_LIMIT = 25;
+static const unsigned int DEFAULT_ANCESTOR_LIMIT = 10000;
 /** Default for -limitancestorsize, maximum kilobytes of tx + all in-mempool ancestors */
-static const unsigned int DEFAULT_ANCESTOR_SIZE_LIMIT = 101;
+static const unsigned int DEFAULT_ANCESTOR_SIZE_LIMIT = 40 * 1000;
 /** Default for -limitdescendantcount, max number of in-mempool descendants */
-static const unsigned int DEFAULT_DESCENDANT_LIMIT = 25;
+static const unsigned int DEFAULT_DESCENDANT_LIMIT = 10000;
 /** Default for -limitdescendantsize, maximum kilobytes of in-mempool descendants */
-static const unsigned int DEFAULT_DESCENDANT_SIZE_LIMIT = 101;
+static const unsigned int DEFAULT_DESCENDANT_SIZE_LIMIT = 40 * 1000;
 /** Default for -mempoolexpiry, expiration time for mempool transactions in hours */
-static const unsigned int DEFAULT_MEMPOOL_EXPIRY = 24;
+static const unsigned int DEFAULT_MEMPOOL_EXPIRY = 2 * 7 * 24;
 /** The maximum size of a blk?????.dat file (since 0.8) */
 static const unsigned int MAX_BLOCKFILE_SIZE = 0x8000000; // 128 MiB
 /** The pre-allocation chunk size for blk?????.dat files (since 0.8) */
@@ -87,13 +84,13 @@ static const unsigned int BLOCKFILE_CHUNK_SIZE = 0x1000000; // 16 MiB
 static const unsigned int UNDOFILE_CHUNK_SIZE = 0x100000; // 1 MiB
 
 /** Maximum number of script-checking threads allowed */
-static const int MAX_SCRIPTCHECK_THREADS = 16;
+static const int MAX_SCRIPTCHECK_THREADS = 64;
 /** -par default (number of script-checking threads, 0 = auto) */
 static const int DEFAULT_SCRIPTCHECK_THREADS = 0;
 /** Number of blocks that can be requested at any given time from a single peer. */
 static const int MAX_BLOCKS_IN_TRANSIT_PER_PEER = 16;
 /** Timeout in seconds during which a peer must stall block download progress before being disconnected. */
-static const unsigned int BLOCK_STALLING_TIMEOUT = 2;
+static const unsigned int BLOCK_STALLING_TIMEOUT = 10;
 /** Number of headers sent in one getheaders result. We rely on the assumption that if a peer sends
  *  less than this number, we reached its tip. Changing this value is a protocol upgrade. */
 static const unsigned int MAX_HEADERS_RESULTS = 2000;
@@ -128,9 +125,9 @@ static const unsigned int AVG_FEEFILTER_BROADCAST_INTERVAL = 10 * 60;
 /** Maximum feefilter broadcast delay after significant change. */
 static const unsigned int MAX_FEEFILTER_CHANGE_DELAY = 5 * 60;
 /** Block download timeout base, expressed in millionths of the block interval (i.e. 5 min) */
-static const int64_t BLOCK_DOWNLOAD_TIMEOUT_BASE = 5000000;
+static const int64_t BLOCK_DOWNLOAD_TIMEOUT_BASE = 2000000;
 /** Additional block download timeout per parallel downloading peer (i.e. 2.5 min) */
-static const int64_t BLOCK_DOWNLOAD_TIMEOUT_PER_PEER = 2500000;
+static const int64_t BLOCK_DOWNLOAD_TIMEOUT_PER_PEER = 1000000;
 
 static const unsigned int DEFAULT_LIMITFREERELAY = 0;
 static const bool DEFAULT_RELAYPRIORITY = true;
@@ -186,7 +183,6 @@ extern size_t nCoinCacheUsage;
 extern CFeeRate minRelayTxFeeRate;
 /** Absolute maximum transaction fee (in satoshis) used by wallet and mempool (rejects high fee in sendrawtransaction) */
 extern CAmount maxTxFee;
-extern bool fAlerts;
 /** If the tip is older than this (in seconds), the node is considered to be in initial block download. */
 extern int64_t nMaxTipAge;
 extern bool fEnableReplacement;
@@ -208,20 +204,20 @@ extern bool fPruneMode;
 /** Number of MiB of block files that we're trying to stay below. */
 extern uint64_t nPruneTarget;
 /** Block files containing a block-height within MIN_BLOCKS_TO_KEEP of chainActive.Tip() will not be pruned. */
-static const unsigned int MIN_BLOCKS_TO_KEEP = 1440;
+static const unsigned int MIN_BLOCKS_TO_KEEP = 1152;
 
 static const signed int DEFAULT_CHECKBLOCKS = 6;
 static const unsigned int DEFAULT_CHECKLEVEL = 3;
 
-// Require that user allocate at least 22,00MB for block & undo files (blk???.dat and rev???.dat)
-// At 1MB per block, 1,440 blocks = 1,440MB.
-// Add 15% for Undo data = 1,656MB
-// Add 20% for Orphan block rate = 1,987MB
-// We want the low water mark after pruning to be at least 1987 MB and since we prune in
+// Require that user allocate at least 2,200MB for block & undo files (blk???.dat and rev???.dat)
+// At 8MB per block, 1,152 blocks = 9,216MB.
+// Add 15% for Undo data = 13,824MB
+// Add 20% for Orphan block rate = 16,589MB
+// We want the low water mark after pruning to be at least 16,589 MB and since we prune in
 // full block file chunks, we need the high water mark which triggers the prune to be
-// one 128MB block file + added 15% undo data = 147MB greater for a total of 2,134MB
-// Setting the target to > than 2200MB will make it likely we can respect the target.
-static const uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES = 2200ULL * 1024 * 1024;
+// one 128MB block file + added 15% undo data = 147MB greater for a total of 16,736MB
+// Setting the target to > than 16,800MB will make it likely we can respect the target.
+static const uint64_t MIN_DISK_SPACE_FOR_BLOCK_FILES = 16800ULL * 1024 * 1024;
 
 /**
  * Process an incoming block. This only returns after the best known valid
@@ -408,25 +404,6 @@ bool CheckFinalTx(const CTransaction &tx, int flags = -1);
  * Test whether the LockPoints height and time are still valid on the current chain
  */
 bool TestLockPointValidity(const LockPoints* lp);
-
-/**
- * Check if transaction is final per BIP 68 sequence numbers and can be included in a block.
- * Consensus critical. Takes as input a list of heights at which tx's inputs (in order) confirmed.
- */
-bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int>* prevHeights, const CBlockIndex& block);
-
-/**
- * Check if transaction will be BIP 68 final in the next block to be created.
- *
- * Simulates calling SequenceLocks() with data from the tip of the current active chain.
- * Optionally stores in LockPoints the resulting height and time calculated and the hash
- * of the block needed for calculation or skips the calculation and uses the LockPoints
- * passed in for evaluation.
- * The LockPoints should not be considered valid if CheckSequenceLocks returns false.
- *
- * See consensus/consensus.h for flag definitions.
- */
-bool CheckSequenceLocks(const CTransaction &tx, int flags, LockPoints* lp = NULL, bool useExistingLockPoints = false);
 
 /**
  * Closure representing one script verification

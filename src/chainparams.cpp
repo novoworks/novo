@@ -126,7 +126,6 @@ public:
         pchMessageStart[1] = 0xfe;
         pchMessageStart[2] = 0xfe;
         pchMessageStart[3] = 0xca;
-        vAlertPubKey = ParseHex("04d4da7a5dae4db797d9b0644d57a5cd50e05a70f36091cd62e2fc41c98ded06340be5a43a35e185690cd9cde5d72da8f6d065b499b06f51dcfba14aad859f443a");
         nDefaultPort = 8666;
         nPruneAfterHeight = 100000;
 
@@ -160,8 +159,9 @@ public:
                 {66666, uint256S("0000000000a56eaa524bd157ef8649e5427af2c36e902dc96a4025de25f0f110")},
                 {77777, uint256S("000000000082cb226a8253dfde5c1cdd6f7dac63802aa1d5f83d16a865cdfac3")},
                 {88888, uint256S("000000000019b95eaf590aa5818a2d130a2b2f65b63215f4c29afad912e66c00")},
-                {93000, uint256S("00000000000c181a2deb48daa68ed7d2f93fc76f58ca3299928a3223c52f002e")},
-                {100000, uint256S("000000000001045fb2376eda493fdb994d34c050741d88cdd8ec282becc2ba61")},
+                {99999, uint256S("0000000000007ff0ae9afe9a6f31918a248b47f322e012102c86745a6e16d687")},
+                {111111, uint256S("000000000000f366e4e2d11fbf159bf830315eb289ad8cb4dd5def5b4f6e267e")},
+                {116000, uint256S("0000000000011bbe9e30c805a4e3696b1d04724b4417c8a9e2397e853783ed2d")},
             }};
 
         chainTxData = ChainTxData{
@@ -169,7 +169,7 @@ public:
             // Tx estimate based on average of year 2021 (~40k transactions per day)
             1642953295, // * UNIX timestamp of last checkpoint block
             29980,   // * total number of transactions between genesis and last checkpoint
-                        //   (the tx=... number in the SetBestChain debug.log lines)
+                     //   (the tx=... number in the SetBestChain debug.log lines)
             3        // * estimated number of transactions per second after checkpoint
         };
     }
@@ -212,7 +212,6 @@ public:
         pchMessageStart[1] = 0xfa;
         pchMessageStart[2] = 0xab;
         pchMessageStart[3] = 0xce;
-        vAlertPubKey = ParseHex("042756726da3c7ef515d89212ee1705023d14be389e25fe15611585661b9a20021908b2b80a3c7200a0139dd2b26946606aab0eef9aa7689a6dc2c7eee237fa834");
         nDefaultPort = 18666;
 
         consensus.asertAnchorParams = Consensus::Params::ASERTAnchor{

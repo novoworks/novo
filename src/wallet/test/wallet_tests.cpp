@@ -201,11 +201,12 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
         // empty the wallet and start again, now with fractions of a coin, to test small change avoidance
 
         empty_wallet();
-        add_coin(CWallet::GetMinChange() * 1 / 10);
-        add_coin(CWallet::GetMinChange() * 2 / 10);
-        add_coin(CWallet::GetMinChange() * 3 / 10);
-        add_coin(CWallet::GetMinChange() * 4 / 10);
-        add_coin(CWallet::GetMinChange() * 5 / 10);
+        add_coin(CWallet::GetMinChange() * 1 / 16);
+        add_coin(CWallet::GetMinChange() * 2 / 16);
+        add_coin(CWallet::GetMinChange() * 3 / 16);
+        add_coin(CWallet::GetMinChange() * 4 / 16);
+        add_coin(CWallet::GetMinChange() * 5 / 16);
+        add_coin(CWallet::GetMinChange() * 6 / 16);
 
         // try making 1 * GetMinChange() from the 1.5 * GetMinChange()
         // we'll get change smaller than GetMinChange() whatever happens, so can expect GetMinChange() exactly
@@ -220,8 +221,8 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
         BOOST_CHECK_EQUAL(nValueRet, 1 * CWallet::GetMinChange()); // we should get the exact amount
 
         // if we add more small output:
-        add_coin(CWallet::GetMinChange() * 6 / 10);
-        add_coin(CWallet::GetMinChange() * 7 / 10);
+        add_coin(CWallet::GetMinChange() * 7 / 16);
+        add_coin(CWallet::GetMinChange() * 8 / 16);
 
         // and try again to make 1.0 * GetMinChange()
         BOOST_CHECK( wallet.SelectCoinsMinConf(1 * CWallet::GetMinChange(), 1, 1, 0, vCoins, setCoinsRet, nValueRet));
@@ -242,9 +243,9 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
 
         // sometimes it will fail, and so we use the next biggest output:
         empty_wallet();
-        add_coin(CWallet::GetMinChange() * 5 / 10);
-        add_coin(CWallet::GetMinChange() * 6 / 10);
-        add_coin(CWallet::GetMinChange() * 7 / 10);
+        add_coin(CWallet::GetMinChange() * 5 / 16);
+        add_coin(CWallet::GetMinChange() * 6 / 16);
+        add_coin(CWallet::GetMinChange() * 7 / 16);
         add_coin(1111 * CWallet::GetMinChange());
         BOOST_CHECK( wallet.SelectCoinsMinConf(1 * CWallet::GetMinChange(), 1, 1, 0, vCoins, setCoinsRet, nValueRet));
         BOOST_CHECK_EQUAL(nValueRet, 1111 * CWallet::GetMinChange()); // we get the bigger output
@@ -252,9 +253,9 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
 
         // but sometimes it's possible, and we use an exact subset (0.4 + 0.6 = 1.0)
         empty_wallet();
-        add_coin(CWallet::GetMinChange() * 4 / 10);
-        add_coin(CWallet::GetMinChange() * 6 / 10);
-        add_coin(CWallet::GetMinChange() * 8 / 10);
+        add_coin(CWallet::GetMinChange() * 6 / 16);
+        add_coin(CWallet::GetMinChange() * 8 / 16);
+        add_coin(CWallet::GetMinChange() * 10 / 16);
         add_coin(1111 * CWallet::GetMinChange());
         BOOST_CHECK( wallet.SelectCoinsMinConf(CWallet::GetMinChange(), 1, 1, 0, vCoins, setCoinsRet, nValueRet));
         BOOST_CHECK_EQUAL(nValueRet, CWallet::GetMinChange());   // we should get the exact amount
@@ -262,17 +263,17 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
 
         // test avoiding small change
         empty_wallet();
-        add_coin(CWallet::GetMinChange() * 5 / 100);
+        add_coin(CWallet::GetMinChange() * 2 / 16);
         add_coin(CWallet::GetMinChange() * 1);
         add_coin(CWallet::GetMinChange() * 100);
 
         // trying to make 100.01 from these three outputs
-        BOOST_CHECK(wallet.SelectCoinsMinConf(CWallet::GetMinChange() * 10001 / 100, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, CWallet::GetMinChange() * 10105 / 100); // we should get all outputs
+        BOOST_CHECK(wallet.SelectCoinsMinConf(CWallet::GetMinChange() * 1601 / 16, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, CWallet::GetMinChange() * 1618 / 16); // we should get all outputs
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 3U);
 
         // but if we try to make 99.9, we should take the bigger of the two small outputs to avoid small change
-        BOOST_CHECK(wallet.SelectCoinsMinConf(CWallet::GetMinChange() * 9990 / 100, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK(wallet.SelectCoinsMinConf(CWallet::GetMinChange() * 1599 / 16, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
         BOOST_CHECK_EQUAL(nValueRet, 101 * CWallet::GetMinChange());
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 2U);
 
@@ -502,7 +503,7 @@ BOOST_AUTO_TEST_CASE(GetMinimumFee_test)
     CTxOut txout1(value, (CScript)vector<unsigned char>(24, 0));
     tx.vout.push_back(txout1);
 
-    int64_t nMinTxFee = COIN / 100;
+    int64_t nMinTxFee = 8000;
 
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 250, 0, pool), nMinTxFee * 0.25);
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 1000, 0, pool), nMinTxFee * 1.0);
@@ -515,16 +516,16 @@ BOOST_AUTO_TEST_CASE(GetMinimumFee_dust_test)
     CMutableTransaction tx;
     CTxMemPool pool(payTxFee);
     CTxOut txout1(139496846, (CScript)vector<unsigned char>(24, 0)); // Regular output
-    CTxOut txout2(154996, (CScript)vector<unsigned char>(24, 0)); // Dust output
+    CTxOut txout2(4367, (CScript)vector<unsigned char>(24, 0)); // Dust output
     tx.vout.push_back(txout1);
     tx.vout.push_back(txout2);
 
-    CAmount nMinTxFee = COIN / 100;
+    CAmount nMinTxFee = 8000;
 
     // Confirm dust penalty fees are added on
     // Because this is ran by the wallet, this takes the discardThreshold,
     // not the dust limit
-    CAmount nDustPenalty = COIN;
+    CAmount nDustPenalty = 4368;
 
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 963, 0, pool), nDustPenalty + (nMinTxFee * 0.963));
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 1000, 0, pool), nDustPenalty + (nMinTxFee * 1.000));

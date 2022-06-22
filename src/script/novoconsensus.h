@@ -49,15 +49,9 @@ typedef enum novoconsensus_error_t
 enum
 {
     novoconsensus_SCRIPT_FLAGS_VERIFY_NONE                = 0,
-    novoconsensus_SCRIPT_FLAGS_VERIFY_P2SH                = (1U << 0), // evaluate P2SH (BIP16) subscripts
     novoconsensus_SCRIPT_FLAGS_VERIFY_DERSIG              = (1U << 2), // enforce strict DER (BIP66) compliance
     novoconsensus_SCRIPT_FLAGS_VERIFY_NULLDUMMY           = (1U << 4), // enforce NULLDUMMY (BIP147)
-    novoconsensus_SCRIPT_FLAGS_VERIFY_CHECKLOCKTIMEVERIFY = (1U << 9), // enable CHECKLOCKTIMEVERIFY (BIP65)
-    novoconsensus_SCRIPT_FLAGS_VERIFY_CHECKSEQUENCEVERIFY = (1U << 10), // enable CHECKSEQUENCEVERIFY (BIP112)
-    novoconsensus_SCRIPT_FLAGS_VERIFY_WITNESS             = (1U << 11), // enable WITNESS (BIP141)
-    novoconsensus_SCRIPT_FLAGS_VERIFY_ALL                 = novoconsensus_SCRIPT_FLAGS_VERIFY_P2SH | novoconsensus_SCRIPT_FLAGS_VERIFY_DERSIG |
-                                                               novoconsensus_SCRIPT_FLAGS_VERIFY_NULLDUMMY | novoconsensus_SCRIPT_FLAGS_VERIFY_CHECKLOCKTIMEVERIFY |
-                                                               novoconsensus_SCRIPT_FLAGS_VERIFY_CHECKSEQUENCEVERIFY | novoconsensus_SCRIPT_FLAGS_VERIFY_WITNESS
+    novoconsensus_SCRIPT_FLAGS_VERIFY_ALL                 = novoconsensus_SCRIPT_FLAGS_VERIFY_DERSIG | novoconsensus_SCRIPT_FLAGS_VERIFY_NULLDUMMY
 };
 
 /// Returns 1 if the input nIn of the serialized transaction pointed to by

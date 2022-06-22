@@ -21,6 +21,9 @@
 // Maximum number of bytes pushable to the stack
 static const unsigned int MAX_SCRIPT_ELEMENT_SIZE = 8 * 1000000;
 
+// Maximum stack size in bytes
+static const unsigned int MAX_STACK_SIZE = 100 * 1000000;
+
 // Maximum number of non-push operations per script
 static const int MAX_OPS_PER_SCRIPT = 8 * 1000000;
 

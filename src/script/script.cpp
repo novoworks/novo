@@ -169,7 +169,7 @@ unsigned int CScript::GetSigOpCount(bool fAccurate) const
             n++;
         else if (opcode == OP_CHECKMULTISIG || opcode == OP_CHECKMULTISIGVERIFY)
         {
-            if (fAccurate && lastOpcode >= OP_1 && lastOpcode <= OP_16)
+            if (lastOpcode >= OP_1 && lastOpcode <= OP_16)
                 n += DecodeOP_N(lastOpcode);
             else
             {

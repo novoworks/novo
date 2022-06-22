@@ -30,7 +30,7 @@ void TestVector(const Hasher &h, const In &in, const Out &out) {
     {
         // Test that writing the whole input string at once works.
         Hasher(h).Write((unsigned char*)&in[0], in.size()).Finalize(&hash[0]);
-        BOOST_CHECK(hash == out);
+        BOOST_CHECK_MESSAGE(hash == out, HexStr(hash) + std::string(" != ") + HexStr(out));
     }
     for (int i=0; i<32; i++) {
         // Test that writing the string broken up in random pieces works.
@@ -43,11 +43,11 @@ void TestVector(const Hasher &h, const In &in, const Out &out) {
             if (pos > 0 && pos + 2 * out.size() > in.size() && pos < in.size()) {
                 // Test that writing the rest at once to a copy of a hasher works.
                 Hasher(hasher).Write((unsigned char*)&in[pos], in.size() - pos).Finalize(&hash[0]);
-                BOOST_CHECK(hash == out);
+                BOOST_CHECK_MESSAGE(hash == out, HexStr(hash) + std::string(" != ") + HexStr(out));
             }
         }
         hasher.Finalize(&hash[0]);
-        BOOST_CHECK(hash == out);
+        BOOST_CHECK_MESSAGE(hash == out, HexStr(hash) + std::string(" != ") + HexStr(out));
     }
 }
 
@@ -248,8 +248,8 @@ BOOST_AUTO_TEST_CASE(sha256_testvectors) {
                "f08a78cbbaee082b052ae0708f32fa1e50c5c421aa772ba5dbb406a2ea6be342");
     TestSHA256("This is exactly 64 bytes long, not counting the terminating byte",
                "ab64eff7e88e2e46165e29f2bce41826bd4c7b3552f6b382a9e7d3af47c245f8");
-    TestSHA256("As Novo relies on 80 byte header hashes, we want to have an example for that.",
-               "7406e8de7d6e4fffc573daef05aefb8806e7790f55eab5576f31349743cca743");
+    TestSHA256("As the Novo relies on 80 byte header hashes, we want to have an example for that",
+               "d2c6deca36df2eebc533b68e99e78ade3d1ce22c6ba3639fd98832dfec525bf0");
     TestSHA256(std::string(1000000, 'a'),
                "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
     TestSHA256(test1, "a316d55510b49662420f49d145d42fb83f31ef8dc016aa4e32df049991a91e26");

@@ -155,7 +155,7 @@ void CWallet::DeriveNewChildKey(CKeyMetadata& metadata, CKey& secret)
         // childIndex | BIP32_HARDENED_KEY_LIMIT = derive childIndex in hardened child-index-range
         // example: 1 | BIP32_HARDENED_KEY_LIMIT == 0x80000001 == 2147483649
         externalChainChildKey.Derive(childKey, hdChain.nExternalChainCounter | BIP32_HARDENED_KEY_LIMIT);
-        metadata.hdKeypath = "m/0'/3'/" + std::to_string(hdChain.nExternalChainCounter) + "'";
+        metadata.hdKeypath = "m/0'/0'/" + std::to_string(hdChain.nExternalChainCounter) + "'";
         metadata.hdMasterKeyID = hdChain.masterKeyID;
         // increment childkey index
         hdChain.nExternalChainCounter++;
@@ -2790,7 +2790,8 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
         wtxNew.SetTx(MakeTransactionRef(std::move(txNew)));
 
         // Limit size
-        if (GetTransactionSize(wtxNew) >= MAX_STANDARD_TX_SIZE)
+        unsigned int sz = GetTransactionSize(wtxNew);
+        if (sz < MIN_STANDARD_TX_SIZE || sz >= MAX_STANDARD_TX_SIZE)
         {
             strFailReason = _("Transaction too large");
             return false;

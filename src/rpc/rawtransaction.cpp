@@ -491,7 +491,7 @@ UniValue decoderawtransaction(const JSONRPCRequest& request)
             "         \"reqSigs\" : n,            (numeric) The required sigs\n"
             "         \"type\" : \"pubkeyhash\",  (string) The type, eg 'pubkeyhash'\n"
             "         \"addresses\" : [           (json array of string)\n"
-            "           \"D731rRTrFydjJdZCKNzfB5go229p59GUGD\"   (string) novo address\n"
+            "           \"12tvKAXCxZjSmdNbao16dKXC8tRWfcF5oc\"   (string) novo address\n"
             "           ,...\n"
             "         ]\n"
             "       }\n"

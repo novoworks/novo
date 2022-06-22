@@ -44,12 +44,12 @@ BOOST_FIXTURE_TEST_CASE(tx_mempool_block_doublespend, TestChain240Setup)
         spends[i].vin[0].prevout.hash = coinbaseTxns[0].GetHash();
         spends[i].vin[0].prevout.n = 0;
         spends[i].vout.resize(1);
-        spends[i].vout[0].nValue = COIN;
+        spends[i].vout[0].nValue = COIN + i;
         spends[i].vout[0].scriptPubKey = scriptPubKey;
 
         // Sign:
         std::vector<unsigned char> vchSig;
-        uint256 hash = SignatureHash(scriptPubKey, spends[i], 0, SIGHASH_ALL, 0, SIGVERSION_BASE);
+        uint256 hash = SignatureHash(scriptPubKey, spends[i], 0, SIGHASH_ALL, 2000000*COIN, SIGVERSION_BASE);
         BOOST_CHECK(coinbaseKey.Sign(hash, vchSig));
         vchSig.push_back((unsigned char)SIGHASH_ALL);
         spends[i].vin[0].scriptSig << vchSig;

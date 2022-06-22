@@ -295,28 +295,28 @@ static bool MinimallyEncode(std::vector<uint8_t> &data) {
     return true;
 }
 
-static valtype LShift(const valtype &a, unsigned int shift) {
-    size_t k = shift / 8;
-    shift = shift % 8;
-    valtype b(a.size(), 0x00);
-    for (size_t i = 0; i < a.size(); i++) {
-        if (i + k + 1 < a.size() && shift != 0)
-            b[i + k + 1] |= (a[i] >> (8 - shift));
-        if (i + k < a.size())
-            b[i + k] |= (a[i] << shift);
-    }
-    return b;
-}
-
 static valtype RShift(const valtype &a, unsigned int shift) {
     size_t k = shift / 8;
     shift = shift % 8;
     valtype b(a.size(), 0x00);
     for (size_t i = 0; i < a.size(); i++) {
+        if (i + k + 1 < a.size() && shift != 0)
+            b[i + k + 1] |= (a[i] << (8 - shift));
+        if (i + k < a.size())
+            b[i + k] |= (a[i] >> shift);
+    }
+    return b;
+}
+
+static valtype LShift(const valtype &a, unsigned int shift) {
+    size_t k = shift / 8;
+    shift = shift % 8;
+    valtype b(a.size(), 0x00);
+    for (size_t i = 0; i < a.size(); i++) {
         if (i >= k + 1 && shift != 0)
-            b[i - k - 1] |= (a[i] << (8 - shift));
+            b[i - k - 1] |= (a[i] >> (8 - shift));
         if (i >= k)
-            b[i - k] |= (a[i] >> shift);
+            b[i - k] |= (a[i] << shift);
     }
     return b;
 }
@@ -334,6 +334,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
     opcodetype opcode;
     valtype vchPushValue;
     vector<bool> vfExec;
+    vector<bool> vfElse;
     vector<valtype> altstack;
     set_error(serror, SCRIPT_ERR_UNKNOWN_ERROR);
     if (script.size() > MAX_SCRIPT_SIZE)
@@ -357,10 +358,6 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
             // Note how OP_RESERVED does not count towards the opcode limit.
             if (opcode > OP_16 && ++nOpCount > MAX_OPS_PER_SCRIPT)
                 return set_error(serror, SCRIPT_ERR_OP_COUNT);
-
-            if (opcode == OP_2MUL ||
-                opcode == OP_2DIV)
-                return set_error(serror, SCRIPT_ERR_DISABLED_OPCODE); // Disabled opcodes.
 
             bool fExec = !count(vfExec.begin(), vfExec.end(), false) && (!fInnerReturn || opcode == OP_RETURN);
             if (fExec && 0 <= opcode && opcode <= OP_PUSHDATA4) {
@@ -407,11 +404,27 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
                 case OP_NOP:
                     break;
 
-                case OP_NOP1: case OP_NOP4: case OP_NOP5:
+                case OP_NOP1: case OP_NOP2: case OP_NOP3: case OP_NOP4: case OP_NOP5:
                 case OP_NOP6: case OP_NOP7: case OP_NOP8: case OP_NOP9: case OP_NOP10:
                 {
                     if (flags & SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS)
                         return set_error(serror, SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS);
+                }
+                break;
+
+                case OP_2MUL:
+                case OP_2DIV:
+                {
+                    if (fExec)
+                        return set_error(serror, SCRIPT_ERR_DISABLED_OPCODE); // Disabled opcodes.
+                }
+                break;
+
+                case OP_VERIF:
+                case OP_VERNOTIF:
+                {
+                    if (fExec)
+                        return set_error(serror, SCRIPT_ERR_BAD_OPCODE);
                 }
                 break;
 
@@ -437,13 +450,15 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
                         popstack(stack);
                     }
                     vfExec.push_back(fValue);
+                    vfElse.push_back(false);
                 }
                 break;
 
                 case OP_ELSE:
                 {
-                    if (vfExec.empty())
+                    if (vfExec.empty() || vfElse.back())
                         return set_error(serror, SCRIPT_ERR_UNBALANCED_CONDITIONAL);
+                    vfElse.back() = true;
                     vfExec.back() = !vfExec.back();
                 }
                 break;
@@ -453,6 +468,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
                     if (vfExec.empty())
                         return set_error(serror, SCRIPT_ERR_UNBALANCED_CONDITIONAL);
                     vfExec.pop_back();
+                    vfElse.pop_back();
                 }
                 break;
 
@@ -878,7 +894,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
 
                     case OP_MOD:
                         if (bn2 == bnZero)
-                            return set_error(serror, SCRIPT_ERR_DIV_BY_ZERO);
+                            return set_error(serror, SCRIPT_ERR_MOD_BY_ZERO);
                         bn = bn1 % bn2;
                         break;
 
@@ -1145,8 +1161,8 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     }
 
-                    uint64_t const size = CScriptNum(stacktop(-1), fRequireMinimal, CScriptNum::nDefaultMaxNumSize64).getint64();
-                    if (size > MAX_SCRIPT_ELEMENT_SIZE) {
+                    int64_t const size = CScriptNum(stacktop(-1), fRequireMinimal, CScriptNum::nDefaultMaxNumSize64).getint64();
+                    if (size < 0 || size > MAX_SCRIPT_ELEMENT_SIZE) {
                         return set_error(serror, SCRIPT_ERR_PUSH_SIZE);
                     }
 
@@ -1195,13 +1211,12 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, un
                     }
                 } break;
 
-
                 default:
                     return set_error(serror, SCRIPT_ERR_BAD_OPCODE);
             }
 
             // Size limits
-            if (stack.size() + altstack.size() > 1000)
+            if (stack.size() + altstack.size() > MAX_STACK_SIZE)
                 return set_error(serror, SCRIPT_ERR_STACK_SIZE);
         }
     }

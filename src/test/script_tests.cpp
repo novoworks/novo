@@ -67,6 +67,11 @@ static ScriptErrorDesc script_errors[]={
     {SCRIPT_ERR_STACK_SIZE, "STACK_SIZE"},
     {SCRIPT_ERR_SIG_COUNT, "SIG_COUNT"},
     {SCRIPT_ERR_PUBKEY_COUNT, "PUBKEY_COUNT"},
+    {SCRIPT_ERR_INVALID_OPERAND_SIZE, "OPERAND_SIZE"},
+    {SCRIPT_ERR_INVALID_NUMBER_RANGE, "INVALID_NUMBER_RANGE"},
+    {SCRIPT_ERR_IMPOSSIBLE_ENCODING, "IMPOSSIBLE_ENCODING"},
+    {SCRIPT_ERR_INVALID_SPLIT_RANGE, "SPLIT_RANGE"},
+    {SCRIPT_ERR_INVALID_BIT_COUNT, "INVALID_BIT_COUNT"},
     {SCRIPT_ERR_VERIFY, "VERIFY"},
     {SCRIPT_ERR_EQUALVERIFY, "EQUALVERIFY"},
     {SCRIPT_ERR_CHECKMULTISIGVERIFY, "CHECKMULTISIGVERIFY"},
@@ -77,6 +82,8 @@ static ScriptErrorDesc script_errors[]={
     {SCRIPT_ERR_INVALID_STACK_OPERATION, "INVALID_STACK_OPERATION"},
     {SCRIPT_ERR_INVALID_ALTSTACK_OPERATION, "INVALID_ALTSTACK_OPERATION"},
     {SCRIPT_ERR_UNBALANCED_CONDITIONAL, "UNBALANCED_CONDITIONAL"},
+    {SCRIPT_ERR_DIV_BY_ZERO, "DIV_BY_ZERO"},
+    {SCRIPT_ERR_MOD_BY_ZERO, "MOD_BY_ZERO"},
     {SCRIPT_ERR_NEGATIVE_LOCKTIME, "NEGATIVE_LOCKTIME"},
     {SCRIPT_ERR_UNSATISFIED_LOCKTIME, "UNSATISFIED_LOCKTIME"},
     {SCRIPT_ERR_SIG_HASHTYPE, "SIG_HASHTYPE"},
@@ -167,12 +174,8 @@ void DoTest(const CScript& scriptPubKey, const CScript& scriptSig, int flags, co
     stream << tx2;
     int libconsensus_flags = flags & novoconsensus_SCRIPT_FLAGS_VERIFY_ALL;
     if (libconsensus_flags == flags) {
-        if (flags & novoconsensus_SCRIPT_FLAGS_VERIFY_WITNESS) {
-            BOOST_CHECK_MESSAGE(novoconsensus_verify_script_with_amount(scriptPubKey.data(), scriptPubKey.size(), txCredit.vout[0].nValue, (const unsigned char*)&stream[0], stream.size(), 0, libconsensus_flags, NULL) == expect, message);
-        } else {
-            BOOST_CHECK_MESSAGE(novoconsensus_verify_script_with_amount(scriptPubKey.data(), scriptPubKey.size(), 0, (const unsigned char*)&stream[0], stream.size(), 0, libconsensus_flags, NULL) == expect, message);
-            BOOST_CHECK_MESSAGE(novoconsensus_verify_script(scriptPubKey.data(), scriptPubKey.size(), (const unsigned char*)&stream[0], stream.size(), 0, libconsensus_flags, NULL) == expect,message);
-        }
+        BOOST_CHECK_MESSAGE(novoconsensus_verify_script_with_amount(scriptPubKey.data(), scriptPubKey.size(), 0, (const unsigned char*)&stream[0], stream.size(), 0, libconsensus_flags, NULL) == expect, message);
+        BOOST_CHECK_MESSAGE(novoconsensus_verify_script(scriptPubKey.data(), scriptPubKey.size(), (const unsigned char*)&stream[0], stream.size(), 0, libconsensus_flags, NULL) == expect,message);
     }
 #endif
 }
@@ -994,12 +997,16 @@ BOOST_AUTO_TEST_CASE(script_standard_push)
         BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_OK, ScriptErrorString(err));
     }
 
-    for (unsigned int i=0; i<=MAX_SCRIPT_ELEMENT_SIZE; i++) {
-        std::vector<unsigned char> data(i, '\111');
+    {
+        int n = MAX_SCRIPT_ELEMENT_SIZE-4-1;
+        std::vector<unsigned char> data(n, '\111');
         CScript script;
         script << data;
-        BOOST_CHECK_MESSAGE(script.IsPushOnly(), "Length " << i << " is not pure push.");
-        BOOST_CHECK_MESSAGE(VerifyScript(script, CScript() << OP_1, SCRIPT_VERIFY_MINIMALDATA, BaseSignatureChecker(), &err), "Length " << i << " push is not minimal data.");
+
+        BOOST_CHECK_MESSAGE(script.IsPushOnly(),
+                            "Length " << n << " is not pure push.");
+        BOOST_CHECK_MESSAGE(VerifyScript(script, CScript() << OP_1, SCRIPT_VERIFY_MINIMALDATA, BaseSignatureChecker(), &err),
+                            "Length " << n << " push is not minimal data.");
         BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_OK, ScriptErrorString(err));
     }
 }

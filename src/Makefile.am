@@ -30,7 +30,6 @@ LIBNOVO_CONSENSUS=libnovo_consensus.a
 LIBNOVO_CLI=libnovo_cli.a
 LIBNOVO_UTIL=libnovo_util.a
 LIBNOVO_CRYPTO=crypto/libnovo_crypto.a
-LIBNOVOQT=qt/libnovoqt.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
 
 if ENABLE_ZMQ
@@ -78,7 +77,6 @@ endif
 NOVO_CORE_H = \
   addrdb.h \
   addrman.h \
-  alert.h \
   base58.h \
   bloom.h \
   blockencodings.h \
@@ -180,7 +178,6 @@ libnovo_server_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libnovo_server_a_SOURCES = \
   addrman.cpp \
   addrdb.cpp \
-  alert.cpp \
   bloom.cpp \
   blockencodings.cpp \
   chain.cpp \
@@ -299,7 +296,6 @@ libnovo_consensus_a_SOURCES = \
 libnovo_common_a_CPPFLAGS = $(AM_CPPFLAGS) $(NOVO_INCLUDES)
 libnovo_common_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libnovo_common_a_SOURCES = \
-  alert.cpp \
   amount.cpp \
   base58.cpp \
   chainparams.cpp \
@@ -487,7 +483,7 @@ clean-local:
 
 .mm.o:
 	$(AM_V_CXX) $(OBJCXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
-	  $(CPPFLAGS) $(AM_CXXFLAGS) $(QT_INCLUDES) $(AM_CXXFLAGS) $(PIE_FLAGS) $(CXXFLAGS) -c -o $@ $<
+	  $(CPPFLAGS) $(AM_CXXFLAGS) $(AM_CXXFLAGS) $(PIE_FLAGS) $(CXXFLAGS) -c -o $@ $<
 
 check-symbols: $(bin_PROGRAMS)
 if GLIBC_BACK_COMPAT
@@ -515,12 +511,4 @@ endif
 
 if ENABLE_BENCH
 include Makefile.bench.include
-endif
-
-if ENABLE_QT
-include Makefile.qt.include
-endif
-
-if ENABLE_QT_TESTS
-include Makefile.qttest.include
 endif

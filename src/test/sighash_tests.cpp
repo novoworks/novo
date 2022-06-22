@@ -22,75 +22,16 @@
 
 #include <univalue.h>
 
+
+// Uncomment if you want to output updated JSON tests.
+// #define PRINT_SIGHASH_JSON
+
 extern UniValue read_json(const std::string& jsondata);
-
-// Old script.cpp SignatureHash function
-uint256 static SignatureHashOld(CScript scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType)
-{
-    static const uint256 one(uint256S("0000000000000000000000000000000000000000000000000000000000000001"));
-    if (nIn >= txTo.vin.size())
-    {
-        printf("ERROR: SignatureHash(): nIn=%d out of range\n", nIn);
-        return one;
-    }
-    CMutableTransaction txTmp(txTo);
-
-    // In case concatenating two scripts ends up with two codeseparators,
-    // or an extra one at the end, this prevents all those possible incompatibilities.
-    scriptCode.FindAndDelete(CScript(OP_CODESEPARATOR));
-
-    // Blank out other inputs' signatures
-    for (unsigned int i = 0; i < txTmp.vin.size(); i++)
-        txTmp.vin[i].scriptSig = CScript();
-    txTmp.vin[nIn].scriptSig = scriptCode;
-
-    // Blank out some of the outputs
-    if ((nHashType & 0x1f) == SIGHASH_NONE)
-    {
-        // Wildcard payee
-        txTmp.vout.clear();
-
-        // Let the others update at will
-        for (unsigned int i = 0; i < txTmp.vin.size(); i++)
-            if (i != nIn)
-                txTmp.vin[i].nSequence = 0;
-    }
-    else if ((nHashType & 0x1f) == SIGHASH_SINGLE)
-    {
-        // Only lock-in the txout payee at same index as txin
-        unsigned int nOut = nIn;
-        if (nOut >= txTmp.vout.size())
-        {
-            printf("ERROR: SignatureHash(): nOut=%d out of range\n", nOut);
-            return one;
-        }
-        txTmp.vout.resize(nOut+1);
-        for (unsigned int i = 0; i < nOut; i++)
-            txTmp.vout[i].SetNull();
-
-        // Let the others update at will
-        for (unsigned int i = 0; i < txTmp.vin.size(); i++)
-            if (i != nIn)
-                txTmp.vin[i].nSequence = 0;
-    }
-
-    // Blank out other inputs completely, not recommended for open transactions
-    if (nHashType & SIGHASH_ANYONECANPAY)
-    {
-        txTmp.vin[0] = txTmp.vin[nIn];
-        txTmp.vin.resize(1);
-    }
-
-    // Serialize and hash
-    CHashWriter ss(SER_GETHASH, 0);
-    ss << txTmp << nHashType;
-    return ss.GetHash();
-}
 
 void static RandomScript(CScript &script) {
     static const opcodetype oplist[] = {OP_FALSE, OP_1, OP_2, OP_3, OP_CHECKSIG, OP_IF, OP_VERIF, OP_RETURN, OP_CODESEPARATOR};
     script = CScript();
-    int ops = (insecure_rand() % 10);
+    int ops = (insecure_rand() % 10)+3; // avoid undersize
     for (int i=0; i<ops; i++)
         script << oplist[insecure_rand() % (sizeof(oplist)/sizeof(oplist[0]))];
 }
@@ -141,9 +82,7 @@ BOOST_AUTO_TEST_CASE(sighash_test)
         RandomScript(scriptCode);
         int nIn = insecure_rand() % txTo.vin.size();
 
-        uint256 sh, sho;
-        sho = SignatureHashOld(scriptCode, txTo, nIn, nHashType);
-        sh = SignatureHash(scriptCode, txTo, nIn, nHashType, 0, SIGVERSION_BASE);
+        uint256 sh = SignatureHash(scriptCode, txTo, nIn, nHashType, 0, SIGVERSION_BASE);
         #if defined(PRINT_SIGHASH_JSON)
         CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
         ss << txTo;
@@ -153,13 +92,12 @@ BOOST_AUTO_TEST_CASE(sighash_test)
         std::cout << HexStr(scriptCode) << "\", ";
         std::cout << nIn << ", ";
         std::cout << nHashType << ", \"";
-        std::cout << sho.GetHex() << "\"]";
+        std::cout << sh.GetHex() << "\"]";
         if (i+1 != nRandomTests) {
           std::cout << ",";
         }
         std::cout << "\n";
         #endif
-        BOOST_CHECK(sh == sho);
     }
     #if defined(PRINT_SIGHASH_JSON)
     std::cout << "]\n";
@@ -200,7 +138,7 @@ BOOST_AUTO_TEST_CASE(sighash_from_data)
 
           CValidationState state;
           BOOST_CHECK_MESSAGE(CheckTransaction(*tx, state), strTest);
-          BOOST_CHECK(state.IsValid());
+          BOOST_CHECK_MESSAGE(state.IsValid(), state.GetRejectReason());
 
           std::vector<unsigned char> raw = ParseHex(raw_script);
           scriptCode.insert(scriptCode.end(), raw.begin(), raw.end());

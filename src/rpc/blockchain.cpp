@@ -1026,7 +1026,7 @@ static UniValue SoftForkMajorityDesc(int version, CBlockIndex* pindex, const Con
             activated = pindex->nHeight >= consensusParams.BIP66Height;
             break;
         case 4:
-            activated = pindex->nHeight >= consensusParams.BIP65Height;
+            activated = true;
             break;
     }
     rv.pushKV("status", activated);
@@ -1155,7 +1155,6 @@ UniValue getblockchaininfo(const JSONRPCRequest& request)
     UniValue bip9_softforks(UniValue::VOBJ);
     softforks.push_back(SoftForkDesc("bip34", 2, tip, consensusParams));
     softforks.push_back(SoftForkDesc("bip66", 3, tip, consensusParams));
-    softforks.push_back(SoftForkDesc("bip65", 4, tip, consensusParams));
     obj.pushKV("softforks",             softforks);
     obj.pushKV("bip9_softforks", bip9_softforks);
     obj.pushKV("warnings", GetWarnings("statusbar"));

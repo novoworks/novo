@@ -39,8 +39,13 @@ BOOST_AUTO_TEST_CASE(GetBlockProofEquivalentTime_test)
 }
 
 
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args) {
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+
 using CBlockIndexPtr = std::unique_ptr<CBlockIndex>;
-const auto MkCBlockIndexPtr = &std::make_unique<CBlockIndex>;
+const auto MkCBlockIndexPtr = &make_unique<CBlockIndex>;
 
 static CBlockIndexPtr GetBlockIndex(CBlockIndex *pindexPrev, int64_t nTimeInterval, uint32_t nBits) {
     CBlockIndexPtr block = MkCBlockIndexPtr();
@@ -55,7 +60,7 @@ static CBlockIndexPtr GetBlockIndex(CBlockIndex *pindexPrev, int64_t nTimeInterv
 }
 
 double TargetFromBits(const uint32_t nBits) {
-    return (nBits & 0xff'ff'ff) * pow(256, (nBits >> 24)-3);
+    return (nBits & 0xffffff) * pow(256, (nBits >> 24)-3);
 }
 
 double GetASERTApproximationError(const CBlockIndex *pindexPrev,
@@ -108,7 +113,7 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
 
     // ASERT anchor block. We give this one a solvetime of 150 seconds to ensure that
     // the solvetime between the pre-anchor and the anchor blocks is actually used.
-    blocks[1] = GetBlockIndex(blocks[0].get(), 150, initialBits);
+    blocks[1] = GetBlockIndex(blocks[0].get(), 150/4, initialBits);
     // The nBits for the next block should not be equal to the anchor block's nBits
     CBlockHeader blkHeaderDummy;
     uint32_t nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params);
@@ -116,7 +121,7 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
     BOOST_CHECK(nBits != initialBits);
 
     // If we add another block at 1050 seconds, we should return to the anchor block's nBits
-    blocks[i] = GetBlockIndex(blocks[i-1].get(), 1050, nBits);
+    blocks[i] = GetBlockIndex(blocks[i-1].get(), params.nPowTargetSpacing*2, nBits);
     nBits = GetNextASERTWorkRequired(blocks[i++].get(), &blkHeaderDummy, params);
     BOOST_CHECK(nBits == initialBits);
     BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
@@ -139,7 +144,7 @@ BOOST_AUTO_TEST_CASE(asert_difficulty_test) {
     BOOST_CHECK(nBits == initialBits);
     BOOST_CHECK(fabs(GetASERTApproximationError(blocks[i-1].get(), nBits, blocks[1].get())) < dMaxErr);
 
-    // Pile up some blocks every 10 mins to establish some history.
+    // Pile up some blocks every 2.5 mins to establish some history.
     for (; i < 150; i++) {
         blocks[i] = GetBlockIndex(blocks[i - 1].get(), params.nPowTargetSpacing, nBits);
         BOOST_CHECK_EQUAL(blocks[i]->nBits, nBits);
