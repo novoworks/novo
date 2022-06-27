@@ -395,6 +395,12 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fChe
                 return state.DoS(10, false, REJECT_INVALID, "bad-txns-prevout-null");
     }
 
+    // disable RichTX
+    const Consensus::Params& consensus = Params().GetConsensus();
+    if (consensus.DisableRichTxIDHeight > 0 && chainActive.Height() >= consensus.DisableRichTxIDHeight)
+        if (tx.nVersion == CTransaction::RICHTX_VERSION)
+            return state.DoS(0, false, REJECT_INVALID, "bad-txns-richtx");
+
     return true;
 }
 

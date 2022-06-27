@@ -16,6 +16,13 @@ using namespace std;
 
 static int64_t nMockTime = 0; //!< For unit testing
 
+const int64_t nStartupTime = GetTime();
+
+// Obtain the application startup time (used for uptime calculation)
+int64_t GetStartupTime() {
+    return nStartupTime;
+}
+
 int64_t GetTime()
 {
     if (nMockTime) return nMockTime;

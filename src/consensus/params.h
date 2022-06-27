@@ -49,6 +49,7 @@ struct Params {
     /** Block height at which BIP66 becomes active */
     int32_t BIP66Height;
 
+    int32_t DisableRichTxIDHeight;
     int32_t SteadyASERTHeight;
 
     /**

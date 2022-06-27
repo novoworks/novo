@@ -1,6 +1,11 @@
-# Release Notes for Novo version 0.2.0rc2
+# Release Notes for Novo version 0.2.0
 
-Novo version 0.2.0rc2 is released.
+Novo version 0.2.0 is released.
 
-It includes a number of improvements to RC1.
-If nothing else, it will soon become official version 0.2.0.
+1. Opcode being compatible with v0.1.2
+2. Dust is now a fixed value (0.4368 Novo)
+3. FeeRate is set to 0.8 Novo/KB, consistent with v0.1.2.
+4. RPC is modified and basically compatible with v0.1.2.
+5. GUI is removed.
+6. Alert system is removed.
+7. Hark fork is scheduled at height 130000 to disable RichTXID.
