@@ -8,4 +8,4 @@ Novo version 0.2.0 is released.
 4. RPC is modified and basically compatible with v0.1.2.
 5. GUI is removed.
 6. Alert system is removed.
-7. Hark fork is scheduled at height 130000 to disable RichTXID.
+7. Hard fork is scheduled at height 130000 to disable RichTXID.
