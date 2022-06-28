@@ -948,7 +948,7 @@ bool AppInitParameterInteraction()
 
     // mempool limits
     int64_t nMempoolSizeMax = GetArg("-maxmempool", DEFAULT_MAX_MEMPOOL_SIZE) * 1000000;
-    int64_t nMempoolSizeMin = GetArg("-limitdescendantsize", DEFAULT_DESCENDANT_SIZE_LIMIT) * 1000 * 40;
+    int64_t nMempoolSizeMin = GetArg("-limitdescendantsize", DEFAULT_DESCENDANT_SIZE_LIMIT) * 1000;
     if (nMempoolSizeMax < 0 || nMempoolSizeMax < nMempoolSizeMin)
         return InitError(strprintf(_("-maxmempool must be at least %d MB"), std::ceil(nMempoolSizeMin / 1000000.0)));
     // incremental relay fee sets the minimimum feerate increase necessary for BIP 125 replacement in the mempool
