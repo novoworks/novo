@@ -88,6 +88,7 @@ public:
         consensus.BIP34Height = 1;
         consensus.BIP34Hash = uint256S("00000000df5c5164b4516916ac7a520df6039e8cac3d4ac9235e15eace81acd2");
         consensus.BIP66Height = 1;
+        consensus.EnableNativeTokenHeight = -1;
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetSpacing = 150;
         consensus.nCoinbaseMaturity = 100;
@@ -163,6 +164,10 @@ public:
                 {99999, uint256S("0000000000007ff0ae9afe9a6f31918a248b47f322e012102c86745a6e16d687")},
                 {111111, uint256S("000000000000f366e4e2d11fbf159bf830315eb289ad8cb4dd5def5b4f6e267e")},
                 {116000, uint256S("0000000000011bbe9e30c805a4e3696b1d04724b4417c8a9e2397e853783ed2d")},
+                {130000, uint256S("00000000000046ecc2da4ab52be9d2528f7415fc3dcf9c1fcecc4a85f1809e38")},
+                {130001, uint256S("00000000197c9247cdd416476f0f98b4d367a0477e49dc39c7c068ea9f397ad2")},
+                {150000, uint256S("000000000001bcd342c1d0758628c1d301d4042a468e2d2525b20dc6f42a9613")},
+                {170000, uint256S("000000000000d62666dcc34d24691a69b110a2c8f7ea7454af508618653cdc42")},
             }};
 
         chainTxData = ChainTxData{
@@ -191,6 +196,7 @@ public:
         consensus.BIP34Height = 1;
         consensus.BIP34Hash = uint256S("");
         consensus.BIP66Height = 1;
+        consensus.EnableNativeTokenHeight = 1;
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetSpacing = 150;
         consensus.fPowNoRetargeting = false;
@@ -271,6 +277,7 @@ public:
         consensus.BIP34Height = 1;
         consensus.BIP34Hash = uint256();
         consensus.BIP66Height = 1;
+        consensus.EnableNativeTokenHeight = 1;
         consensus.powLimit = uint256S("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetSpacing = 150;
         consensus.fPowAllowMinDifficultyBlocks = true;

@@ -48,6 +48,8 @@ struct Params {
     uint256 BIP34Hash;
     /** Block height at which BIP66 becomes active */
     int32_t BIP66Height;
+    /** Block height at which Native Token becomes active */
+    int32_t EnableNativeTokenHeight;
 
     int32_t DisableRichTxIDHeight;
     int32_t SteadyASERTHeight;

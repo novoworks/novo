@@ -6,6 +6,7 @@
 #include "data/tx_valid.json.h"
 #include "test/test_novo.h"
 
+#include "chainparams.h"
 #include "clientversion.h"
 #include "checkqueue.h"
 #include "consensus/validation.h"
@@ -18,6 +19,7 @@
 #include "script/sign.h"
 #include "script/script_error.h"
 #include "script/standard.h"
+#include "primitives/transaction.h"
 #include "utilstrencodings.h"
 
 #include <map>
@@ -103,71 +105,113 @@ BOOST_AUTO_TEST_CASE(tx_valid)
     for (unsigned int idx = 0; idx < tests.size(); idx++) {
         UniValue test = tests[idx];
         std::string strTest = test.write();
-        if (test[0].isArray())
+        if (!test[0].isArray())
+            continue;
+
+        if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
         {
-            if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
+            BOOST_ERROR("Bad test: " << strTest);
+            continue;
+        }
+
+        std::map<COutPoint, CTxOut> mapprevTxOut;
+        std::map<uint256, CMutableTransaction> mapprevTx;
+        CCoinsView coinsDummy;
+        CCoinsViewCache coins(&coinsDummy);
+        UniValue inputs = test[0].get_array();
+        bool fValid = true;
+        for (unsigned int inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
+            const UniValue& input = inputs[inpIdx];
+            if (!input.isArray())
             {
-                BOOST_ERROR("Bad test: " << strTest);
-                continue;
+                fValid = false;
+                break;
             }
-
-            std::map<COutPoint, CScript> mapprevOutScriptPubKeys;
-            std::map<COutPoint, int64_t> mapprevOutValues;
-            UniValue inputs = test[0].get_array();
-            bool fValid = true;
-	    for (unsigned int inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
-	        const UniValue& input = inputs[inpIdx];
-                if (!input.isArray())
-                {
-                    fValid = false;
-                    break;
-                }
-                UniValue vinput = input.get_array();
-                if (vinput.size() < 3 || vinput.size() > 4)
-                {
-                    fValid = false;
-                    break;
-                }
-                COutPoint outpoint(uint256S(vinput[0].get_str()), vinput[1].get_int());
-                mapprevOutScriptPubKeys[outpoint] = ParseScript(vinput[2].get_str());
-                if (vinput.size() >= 4)
-                {
-                    mapprevOutValues[outpoint] = vinput[3].get_int64();
-                }
-            }
-            if (!fValid)
+            UniValue vinput = input.get_array();
+            if (vinput.size() < 3 || vinput.size() > 10)
             {
-                BOOST_ERROR("Bad test: " << strTest);
-                continue;
+                fValid = false;
+                break;
+            }
+            COutPoint outpoint(uint256S(vinput[0].get_str()), vinput[1].get_int());
+            CScript script = ParseScript(vinput[2].get_str());
+            CAmount amount = 0;
+            if (vinput.size() >= 4)
+            {
+                amount = vinput[3].get_int64();
             }
 
-            std::string transaction = test[1].get_str();
-            CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION);
-            CTransaction tx(deserialize, stream);
+            if (vinput.size() < 10)
+            {
+                CTxOut prevTxOut(amount, script);
+                mapprevTxOut[outpoint] = prevTxOut;
+            } else {
+                uint64_t contractType = CTxOut::GetContractTypeByName(vinput[4].get_str());
+                if (!contractType)
+                    BOOST_ERROR("Bad test: unknown txout contract type '" << vinput[4].get_str() << "'");
 
+                COutPoint contractID(uint256S(vinput[5].get_str()), vinput[6].get_int());
+                uint256 contractValue = uint256S(vinput[7].get_str());
+                uint256 contractMaxSupply = uint256S(vinput[8].get_str());
+                std::string contractMetadata = vinput[9].get_str();
+
+                CTxOut prevTxOut(contractType, contractID, contractValue, contractMaxSupply, contractMetadata, amount, script);
+                mapprevTxOut[outpoint] = prevTxOut;
+            }
+
+            if (outpoint.IsNull())
+                continue;
+
+            int n = vinput[1].get_int();
+            uint256 hash = uint256S(vinput[0].get_str());
+
+            CMutableTransaction dummyTransaction;
+            if (mapprevTx.count(hash))
+                dummyTransaction = mapprevTx[hash];
+
+            dummyTransaction.vout.resize(n+1);
+            dummyTransaction.vout[n] = mapprevTxOut[outpoint];
+            dummyTransaction.nVersion = 1;
+
+            mapprevTx[hash] = dummyTransaction;
+
+            coins.ModifyCoins(hash)->FromTx(dummyTransaction, 0);
+        }
+        if (!fValid)
+        {
+            BOOST_ERROR("Bad test: " << strTest);
+            continue;
+        }
+
+        std::string transaction = test[1].get_str();
+        CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION);
+        CTransaction tx(deserialize, stream);
+
+        CValidationState state;
+        BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
+        BOOST_CHECK_MESSAGE(state.IsValid(), state.GetRejectReason());
+
+        if (!tx.IsCoinBase()) {
             CValidationState state;
-            BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
-            BOOST_CHECK(state.IsValid());
+            BOOST_CHECK_MESSAGE(Consensus::CheckTxInputs(Params(), tx, state, coins, 1), strTest);
+            BOOST_CHECK_MESSAGE(state.IsValid(), state.GetRejectReason());
+        }
 
-            PrecomputedTransactionData txdata(tx);
-            for (unsigned int i = 0; i < tx.vin.size(); i++)
+        PrecomputedTransactionData txdata(tx);
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
+        {
+            if (!mapprevTxOut.count(tx.vin[i].prevout))
             {
-                if (!mapprevOutScriptPubKeys.count(tx.vin[i].prevout))
-                {
-                    BOOST_ERROR("Bad test: " << strTest);
-                    break;
-                }
-
-                CAmount amount = 0;
-                if (mapprevOutValues.count(tx.vin[i].prevout)) {
-                    amount = mapprevOutValues[tx.vin[i].prevout];
-                }
-                unsigned int verify_flags = ParseScriptFlags(test[2].get_str());
-                BOOST_CHECK_MESSAGE(VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout],
-                                                 verify_flags, TransactionSignatureChecker(&tx, i, amount, txdata), &err),
-                                    strTest);
-                BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_OK, ScriptErrorString(err));
+                BOOST_ERROR("Bad test: " << strTest);
+                break;
             }
+
+            unsigned int verify_flags = ParseScriptFlags(test[2].get_str());
+            CTxOut prevTxOut = mapprevTxOut[tx.vin[i].prevout];
+            BOOST_CHECK_MESSAGE(VerifyScript(tx.vin[i].scriptSig, prevTxOut.scriptPubKey, verify_flags,
+                                             TransactionSignatureChecker(&tx, i, prevTxOut.nValue, txdata), &err),
+                                strTest);
+            BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_OK, ScriptErrorString(err));
         }
     }
 }
@@ -187,71 +231,113 @@ BOOST_AUTO_TEST_CASE(tx_invalid)
     for (unsigned int idx = 0; idx < tests.size(); idx++) {
         UniValue test = tests[idx];
         std::string strTest = test.write();
-        if (test[0].isArray())
+        if (!test[0].isArray())
+            continue;
+
+        if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
         {
-            if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
-            {
-                BOOST_ERROR("Bad test: " << strTest);
-                continue;
-            }
-
-            std::map<COutPoint, CScript> mapprevOutScriptPubKeys;
-            std::map<COutPoint, int64_t> mapprevOutValues;
-            UniValue inputs = test[0].get_array();
-            bool fValid = true;
-	    for (unsigned int inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
-	        const UniValue& input = inputs[inpIdx];
-                if (!input.isArray())
-                {
-                    fValid = false;
-                    break;
-                }
-                UniValue vinput = input.get_array();
-                if (vinput.size() < 3 || vinput.size() > 4)
-                {
-                    fValid = false;
-                    break;
-                }
-                COutPoint outpoint(uint256S(vinput[0].get_str()), vinput[1].get_int());
-                mapprevOutScriptPubKeys[outpoint] = ParseScript(vinput[2].get_str());
-                if (vinput.size() >= 4)
-                {
-                    mapprevOutValues[outpoint] = vinput[3].get_int64();
-                }
-            }
-            if (!fValid)
-            {
-                BOOST_ERROR("Bad test: " << strTest);
-                continue;
-            }
-
-            std::string transaction = test[1].get_str();
-            CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION );
-            CTransaction tx(deserialize, stream);
-
-            CValidationState state;
-            fValid = CheckTransaction(tx, state) && state.IsValid();
-
-            PrecomputedTransactionData txdata(tx);
-            for (unsigned int i = 0; i < tx.vin.size() && fValid; i++)
-            {
-                if (!mapprevOutScriptPubKeys.count(tx.vin[i].prevout))
-                {
-                    BOOST_ERROR("Bad test: " << strTest);
-                    break;
-                }
-
-                unsigned int verify_flags = ParseScriptFlags(test[2].get_str());
-                CAmount amount = 0;
-                if (mapprevOutValues.count(tx.vin[i].prevout)) {
-                    amount = mapprevOutValues[tx.vin[i].prevout];
-                }
-                fValid = VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout],
-                                      verify_flags, TransactionSignatureChecker(&tx, i, amount, txdata), &err);
-            }
-            BOOST_CHECK_MESSAGE(!fValid, strTest);
-            BOOST_CHECK_MESSAGE(err != SCRIPT_ERR_OK, ScriptErrorString(err));
+            BOOST_ERROR("Bad test: " << strTest);
+            continue;
         }
+
+        std::map<COutPoint, CTxOut> mapprevTxOut;
+        std::map<uint256, CMutableTransaction> mapprevTx;
+        CCoinsView coinsDummy;
+        CCoinsViewCache coins(&coinsDummy);
+        UniValue inputs = test[0].get_array();
+        bool fValid = true;
+        for (unsigned int inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
+            const UniValue& input = inputs[inpIdx];
+            if (!input.isArray())
+            {
+                fValid = false;
+                break;
+            }
+            UniValue vinput = input.get_array();
+            if (vinput.size() < 3 || vinput.size() > 10)
+            {
+                fValid = false;
+                break;
+            }
+
+            COutPoint outpoint(uint256S(vinput[0].get_str()), vinput[1].get_int());
+            CScript script = ParseScript(vinput[2].get_str());
+            CAmount amount = 0;
+            if (vinput.size() >= 4)
+            {
+                amount = vinput[3].get_int64();
+            }
+
+            if (vinput.size() < 10)
+            {
+                CTxOut prevTxOut(amount, script);
+                mapprevTxOut[outpoint] = prevTxOut;
+            } else {
+                uint64_t contractType = CTxOut::GetContractTypeByName(vinput[4].get_str());
+                if (!contractType)
+                    BOOST_ERROR("Bad test: unknown txout contract type '" << vinput[4].get_str() << "'");
+
+                COutPoint contractID(uint256S(vinput[5].get_str()), vinput[6].get_int());
+                uint256 contractValue = uint256S(vinput[7].get_str());
+                uint256 contractMaxSupply = uint256S(vinput[8].get_str());
+                std::string contractMetadata = vinput[9].get_str();
+
+                CTxOut prevTxOut(contractType, contractID, contractValue, contractMaxSupply, contractMetadata, amount, script);
+                mapprevTxOut[outpoint] = prevTxOut;
+            }
+
+            if (outpoint.IsNull())
+                continue;
+
+            int n = vinput[1].get_int();
+            uint256 hash = uint256S(vinput[0].get_str());
+
+            CMutableTransaction dummyTransaction;
+            if (mapprevTx.count(hash))
+                dummyTransaction = mapprevTx[hash];
+
+            dummyTransaction.vout.resize(n+1);
+            dummyTransaction.vout[n] = mapprevTxOut[outpoint];
+            dummyTransaction.nVersion = 1;
+
+            mapprevTx[hash] = dummyTransaction;
+
+            coins.ModifyCoins(hash)->FromTx(dummyTransaction, 0);
+        }
+        if (!fValid)
+        {
+            BOOST_ERROR("Bad test: " << strTest);
+            continue;
+        }
+
+        std::string transaction = test[1].get_str();
+        CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION );
+        CTransaction tx(deserialize, stream);
+
+        CValidationState state;
+        fValid = CheckTransaction(tx, state) && state.IsValid();
+
+        if (!tx.IsCoinBase() && fValid) {
+            CValidationState state;
+            fValid = Consensus::CheckTxInputs(Params(), tx, state, coins, 1) && state.IsValid();
+        }
+
+        PrecomputedTransactionData txdata(tx);
+        for (unsigned int i = 0; i < tx.vin.size() && fValid; i++)
+        {
+            if (!mapprevTxOut.count(tx.vin[i].prevout))
+            {
+                BOOST_ERROR("Bad test: " << strTest);
+                break;
+            }
+
+            unsigned int verify_flags = ParseScriptFlags(test[2].get_str());
+            CTxOut prevTxOut = mapprevTxOut[tx.vin[i].prevout];
+            fValid = VerifyScript(tx.vin[i].scriptSig, prevTxOut.scriptPubKey, verify_flags,
+                                  TransactionSignatureChecker(&tx, i, prevTxOut.nValue, txdata), &err);
+        }
+        BOOST_CHECK_MESSAGE(!fValid, strTest);
+        BOOST_CHECK_MESSAGE(err != SCRIPT_ERR_OK, ScriptErrorString(err));
     }
 }
 

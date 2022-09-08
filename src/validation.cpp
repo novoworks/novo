@@ -362,8 +362,11 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fChe
 
     // Check for negative or overflow output values
     CAmount nValueOut = 0;
+    bool needCheckContract = false;
     for (const auto& txout : tx.vout)
     {
+        if (txout.IsContract())
+            needCheckContract = true;
         if (txout.nValue < 0)
             return state.DoS(100, false, REJECT_INVALID, "bad-txns-vout-negative");
         if (txout.nValue > MAX_MONEY)
@@ -400,6 +403,65 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fChe
     if (consensus.DisableRichTxIDHeight > 0 && chainActive.Height() >= consensus.DisableRichTxIDHeight)
         if (tx.nVersion == CTransaction::RICHTX_VERSION)
             return state.DoS(0, false, REJECT_INVALID, "bad-txns-richtx");
+
+
+    if (!needCheckContract)
+        return true;
+
+    if (consensus.EnableNativeTokenHeight < 0 || chainActive.Height()+1 < consensus.EnableNativeTokenHeight)
+        return state.DoS(0, false, REJECT_INVALID, "bad-txns-native-token-disable");
+
+    // Check for contract
+    std::set<COutPoint> setContractIDs;
+    std::set<std::pair<COutPoint, uint256>> setOutputNFTs;
+    for (const auto& txout : tx.vout)
+    {
+        if (!txout.IsContract())
+            continue;
+
+        if (txout.contractType > CTxOut::MAX_CONTRACT_TYPE)
+            return state.DoS(100, false, REJECT_INVALID, "bad-txns-vout-contract-type");
+
+        if (txout.contractMetadata.size() > CTxOut::MAX_CONTRACT_METADATA_SIZE)
+            return state.DoS(100, false, REJECT_INVALID, "bad-txns-vout-contract-metadata-toolarge");
+
+        if (tx.IsCoinBase()) {
+            // check 0.1
+            if (!txout.contractID.IsNull())
+                return state.DoS(100, false, REJECT_INVALID, "bad-cb-vout-contract");
+        }
+
+        // check 1.1
+        if (txout.contractID.IsNull()) {
+            // check 0.2
+            if ((txout.contractType == CTxOut::CONTRACT_FT_MINT || txout.contractType == CTxOut::CONTRACT_NFT_MINT) &&
+                (!txout.contractValue.IsNull() || txout.contractMaxSupply.IsNull()))
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-vout-contract-mint-invalid");
+            // check 0.3
+            if (txout.contractType == CTxOut::CONTRACT_FT && txout.contractValue != txout.contractMaxSupply)
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-maxsupply");
+            // check 0.4
+            if (txout.contractType == CTxOut::CONTRACT_NFT && (arith_uint256(1) != UintToArith256(txout.contractMaxSupply)))
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-nft-maxsupply");
+        }
+
+        // check 1.2 / 0.3
+        if (txout.contractType == CTxOut::CONTRACT_FT && txout.contractValue.IsNull())
+            return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-zero");
+
+        // finish check 0/1
+        if (txout.contractID.IsNull())
+            continue;
+
+        // check 2.1
+        if (txout.contractType == CTxOut::CONTRACT_FT_MINT || txout.contractType == CTxOut::CONTRACT_NFT_MINT)
+            if (!setContractIDs.insert(txout.contractID).second)
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-mint-duplicate");
+        // check 2.2
+        if (txout.contractType == CTxOut::CONTRACT_NFT)
+            if (!setOutputNFTs.insert(std::make_pair(txout.contractID, txout.contractValue)).second)
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-nft-duplicate");
+    }
 
     return true;
 }
@@ -1200,7 +1262,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
 
 bool CScriptCheck::operator()() {
     const CScript &scriptSig = ptxTo->vin[nIn].scriptSig;
-    if (!VerifyScript(scriptSig, scriptPubKey, nFlags, CachingTransactionSignatureChecker(ptxTo, nIn, amount, cacheStore, *txdata), &error)) {
+    if (!VerifyScript(scriptSig, txout.scriptPubKey, nFlags, CachingTransactionSignatureChecker(ptxTo, nIn, txout, cacheStore, *txdata), &error)) {
         return false;
     }
     return true;
@@ -1214,12 +1276,20 @@ int GetSpendHeight(const CCoinsViewCache& inputs)
 }
 
 namespace Consensus {
-bool CheckTxInputs(const CChainParams& params, const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight)
-{
+    bool CheckTxInputs(const CChainParams& params, const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight)
+    {
         // This doesn't trigger the DoS code on purpose; if it did, it would make it easier
         // for an attacker to attempt to split the network.
         if (!inputs.HaveInputs(tx))
             return state.Invalid(false, 0, "", "Inputs unavailable");
+
+        // check token mint supply
+        bool needCheckContract = false;
+
+        std::map<COutPoint, std::tuple<uint64_t, arith_uint256, arith_uint256, std::string>> mapInputMintTotalSupply;
+        std::map<COutPoint, std::tuple<uint64_t, arith_uint256, arith_uint256, arith_uint256, std::string>> mapInputOutputMintTotalSupply;
+        std::map<COutPoint, std::tuple<arith_uint256, arith_uint256, std::string>> mapInputFungibleTokenValueSum;
+        std::set<std::tuple<COutPoint, uint256, uint256, std::string>> setInputNFTs;
 
         CAmount nValueIn = 0;
         CAmount nFees = 0;
@@ -1240,10 +1310,60 @@ bool CheckTxInputs(const CChainParams& params, const CTransaction& tx, CValidati
             }
 
             // Check for negative or overflow input values
-            nValueIn += coins->vout[prevout.n].nValue;
-            if (!MoneyRange(coins->vout[prevout.n].nValue) || !MoneyRange(nValueIn))
+            const CTxOut &prevTxout = coins->vout[prevout.n];
+            nValueIn += prevTxout.nValue;
+            if (!MoneyRange(prevTxout.nValue) || !MoneyRange(nValueIn))
                 return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputvalues-outofrange");
 
+            if (!prevTxout.IsContract())
+                continue;
+            needCheckContract = true;
+
+            // check 3.1
+            COutPoint contractID = prevTxout.contractID;
+            if (contractID.IsNull())
+                contractID = prevout;
+
+            // for check 4.1
+            if (prevTxout.contractType == CTxOut::CONTRACT_FT_MINT || prevTxout.contractType == CTxOut::CONTRACT_NFT_MINT)
+                mapInputMintTotalSupply[contractID] = std::make_tuple(prevTxout.contractType,
+                                                                       UintToArith256(prevTxout.contractValue),
+                                                                       UintToArith256(prevTxout.contractMaxSupply),
+                                                                       prevTxout.contractMetadata);
+
+            // for check 5.1, associate input FT
+            if (prevTxout.contractType == CTxOut::CONTRACT_FT) {
+                auto it = mapInputFungibleTokenValueSum.find(contractID);
+                if (it == mapInputFungibleTokenValueSum.end())
+                    mapInputFungibleTokenValueSum[contractID] = std::make_tuple(UintToArith256(prevTxout.contractValue),
+                                                                                UintToArith256(prevTxout.contractMaxSupply),
+                                                                                prevTxout.contractMetadata);
+                else {
+                    // mismatch
+                    if (std::get<1>(it->second) != UintToArith256(prevTxout.contractMaxSupply)) {
+                        return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-ft-maxsupply");
+                    }
+                    if (std::get<2>(it->second) != prevTxout.contractMetadata)
+                        return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-ft-metadata");
+
+                    // supply
+                    if (std::get<1>(it->second) - std::get<0>(it->second) < UintToArith256(prevTxout.contractValue))
+                        return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-ft-outofrange");
+
+                    mapInputFungibleTokenValueSum[contractID] = std::make_tuple(
+                        std::get<0>(it->second) + UintToArith256(prevTxout.contractValue),
+                        UintToArith256(prevTxout.contractMaxSupply),
+                        prevTxout.contractMetadata);
+                }
+            }
+
+            // for check 6.2.1
+            if (prevTxout.contractType == CTxOut::CONTRACT_NFT)
+                if (!setInputNFTs.insert(std::make_tuple(contractID,
+                                                         prevTxout.contractValue,
+                                                         prevTxout.contractMaxSupply,
+                                                         prevTxout.contractMetadata)).second)
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-nft-duplicate");
         }
 
         if (nValueIn < tx.GetValueOut())
@@ -1257,8 +1377,199 @@ bool CheckTxInputs(const CChainParams& params, const CTransaction& tx, CValidati
         nFees += nTxFee;
         if (!MoneyRange(nFees))
             return state.DoS(100, false, REJECT_INVALID, "bad-txns-fee-outofrange");
-    return true;
-}
+
+        // check token
+        for (const auto& txout : tx.vout)
+        {
+            if (needCheckContract || txout.IsContract()) {
+                needCheckContract = true;
+                break;
+            }
+        }
+        if (!needCheckContract)
+            return true;
+
+        int countOutputMint = 0;
+        std::map<COutPoint, std::tuple<arith_uint256, arith_uint256, std::string>> mapOutputFungibleTokenValueSum;
+        std::map<COutPoint, int> mapOutputNonFungibleTokenMintCount;
+        for (const auto& txout : tx.vout)
+        {
+            if (!txout.IsContract())
+                continue;
+
+            // finish check 0/1
+            if (txout.contractID.IsNull())
+                continue;
+
+            // check 4
+            if (txout.contractType == CTxOut::CONTRACT_FT_MINT || txout.contractType == CTxOut::CONTRACT_NFT_MINT) {
+                auto it = mapInputMintTotalSupply.find(txout.contractID);
+                // check 4.3.1
+                if (it == mapInputMintTotalSupply.end() || std::get<0>(it->second) != txout.contractType)
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-mint-missing");
+
+                // check 4.3.2
+                if (std::get<1>(it->second) >= UintToArith256(txout.contractValue) ||
+                    UintToArith256(txout.contractValue) > UintToArith256(txout.contractMaxSupply)) {
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-mint-totalsupply");
+                }
+
+                // check 4.3.3
+                if (std::get<2>(it->second) != UintToArith256(txout.contractMaxSupply)) {
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-mint-maxsupply");
+                }
+
+                // check 4.3.4
+                if (std::get<3>(it->second) != txout.contractMetadata) {
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-mint-metadata");
+                }
+
+                // for check 4.2
+                mapInputOutputMintTotalSupply[txout.contractID] = std::make_tuple(txout.contractType,
+                                                                                   std::get<1>(it->second),
+                                                                                   UintToArith256(txout.contractValue),
+                                                                                   UintToArith256(txout.contractMaxSupply),
+                                                                                   txout.contractMetadata);
+                countOutputMint++;
+            }
+
+            // associate output FT
+            // for check 5.2
+            if (txout.contractType == CTxOut::CONTRACT_FT) {
+                auto it = mapOutputFungibleTokenValueSum.find(txout.contractID);
+                if (it == mapOutputFungibleTokenValueSum.end())
+                    mapOutputFungibleTokenValueSum[txout.contractID] = std::make_tuple(UintToArith256(txout.contractValue),
+                                                                                       UintToArith256(txout.contractMaxSupply),
+                                                                                       txout.contractMetadata);
+                else {
+                    // mismatch
+                    if (std::get<1>(it->second) != UintToArith256(txout.contractMaxSupply)) {
+                        return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-maxsupply");
+                    }
+                    if (std::get<2>(it->second) != txout.contractMetadata)
+                        return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-metadata");
+
+                    // supply
+                    if (std::get<1>(it->second) - std::get<0>(it->second) < UintToArith256(txout.contractValue))
+                        return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-outofrange");
+
+                    mapOutputFungibleTokenValueSum[txout.contractID] = std::make_tuple(
+                        std::get<0>(it->second) + UintToArith256(txout.contractValue),
+                        UintToArith256(txout.contractMaxSupply),
+                        txout.contractMetadata);
+                }
+            }
+        }
+        // check 4.3.1
+        if (countOutputMint != mapInputMintTotalSupply.size())
+            return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-mint-burn");
+
+        // check 5
+        int countMatchInputFT = 0;
+        for (const auto& it : mapOutputFungibleTokenValueSum) {
+            const COutPoint &contractID = it.first;
+            arith_uint256 outputFTsum = std::get<0>(it.second);
+            const arith_uint256 contractMaxSupply = std::get<1>(it.second);
+            const std::string &contractMetadata = std::get<2>(it.second);
+
+            auto itMintSupply = mapInputOutputMintTotalSupply.find(contractID);
+            if (itMintSupply != mapInputOutputMintTotalSupply.end() && std::get<0>(itMintSupply->second) == CTxOut::CONTRACT_FT_MINT) {
+                outputFTsum -= (std::get<2>(itMintSupply->second) - std::get<1>(itMintSupply->second));
+                // mismatch
+                if (std::get<3>(itMintSupply->second) != contractMaxSupply)
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-maxsupply");
+                if (std::get<4>(itMintSupply->second) != contractMetadata)
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-metadata");
+            }
+
+            auto itInputFTSum = mapInputFungibleTokenValueSum.find(contractID);
+            if (itInputFTSum != mapInputFungibleTokenValueSum.end()) {
+                outputFTsum -= std::get<0>(itInputFTSum->second);
+                // mismatch
+                if (std::get<1>(itInputFTSum->second) != contractMaxSupply)
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-maxsupply");
+                if (std::get<2>(itInputFTSum->second) != contractMetadata)
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-ft-metadata");
+                countMatchInputFT++;
+            }
+
+            // check 5.4
+            if (arith_uint256(0) != outputFTsum)
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-ft-belowout");
+        }
+        // check 5.3
+        if (countMatchInputFT != mapInputFungibleTokenValueSum.size())
+            return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-ft-burn");
+
+        // check 6
+        int countMatchInputNFT = 0;
+        for (const auto& txout : tx.vout)
+        {
+            if (!txout.IsContract())
+                continue;
+
+            // finish check 0/1
+            if (txout.contractID.IsNull())
+                continue;
+
+            // count output NFT
+            // check 6.1
+            if (txout.contractType != CTxOut::CONTRACT_NFT)
+                continue;
+
+            // check 6.2.1
+            if (setInputNFTs.count(std::make_tuple(txout.contractID,
+                                                   txout.contractValue,
+                                                   txout.contractMaxSupply,
+                                                   txout.contractMetadata))) {
+                countMatchInputNFT++;
+                continue;
+            }
+
+            auto itMintSupply = mapInputOutputMintTotalSupply.find(txout.contractID);
+            if (itMintSupply == mapInputOutputMintTotalSupply.end() || (std::get<0>(itMintSupply->second) != CTxOut::CONTRACT_NFT_MINT)) {
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-nft-missing");
+            }
+
+            // check 6.2.2
+            if (std::get<1>(itMintSupply->second) >= UintToArith256(txout.contractValue) ||
+                std::get<2>(itMintSupply->second) < UintToArith256(txout.contractValue))
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-nft-outofrange");
+            // mismatch
+            if (std::get<3>(itMintSupply->second) != UintToArith256(txout.contractMaxSupply))
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-nft-maxsupply");
+            // count mint nft
+            auto it = mapOutputNonFungibleTokenMintCount.find(txout.contractID);
+            if (it == mapOutputNonFungibleTokenMintCount.end())
+                mapOutputNonFungibleTokenMintCount[txout.contractID] = 1;
+            else
+                mapOutputNonFungibleTokenMintCount[txout.contractID] = it->second + 1;
+        }
+        // check 6.1
+        if (countMatchInputNFT != setInputNFTs.size())
+            return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-contract-nft-burn");
+
+        // check 6
+        for (const auto& itMintSupply : mapInputOutputMintTotalSupply) {
+            const COutPoint &contractID = itMintSupply.first;
+            if (std::get<0>(itMintSupply.second) == CTxOut::CONTRACT_FT_MINT) {
+                // check 5.5
+                if (mapOutputFungibleTokenValueSum.find(contractID) == mapOutputFungibleTokenValueSum.end())
+                    return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-mint-without-ft");
+                continue;
+            }
+
+            auto itNFTCount = mapOutputNonFungibleTokenMintCount.find(contractID);
+            // check 6.3.1
+            if (itNFTCount == mapOutputNonFungibleTokenMintCount.end())
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-mint-without-nft");
+            // check 6.3.2
+            if ((std::get<2>(itMintSupply.second) - std::get<1>(itMintSupply.second)) != arith_uint256(itNFTCount->second))
+                return state.DoS(100, false, REJECT_INVALID, "bad-txns-out-contract-nft-totalsupply");
+        }
+
+        return true;
+    }
 }// namespace Consensus
 
 bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheStore, PrecomputedTransactionData& txdata, std::vector<CScriptCheck> *pvChecks)
@@ -1287,7 +1598,7 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
                 assert(coins);
 
                 // Verify signature
-                CScriptCheck check(*coins, tx, i, flags, cacheStore, &txdata);
+                CScriptCheck check(coins->vout[prevout.n], tx, i, flags, cacheStore, &txdata);
                 if (pvChecks) {
                     pvChecks->push_back(CScriptCheck());
                     check.swap(pvChecks->back());
@@ -1299,7 +1610,7 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
                         // arguments; if so, don't trigger DoS protection to
                         // avoid splitting the network between upgraded and
                         // non-upgraded nodes.
-                        CScriptCheck check2(*coins, tx, i,
+                        CScriptCheck check2(coins->vout[prevout.n], tx, i,
                                 flags & ~STANDARD_NOT_MANDATORY_VERIFY_FLAGS, cacheStore, &txdata);
                         if (check2())
                             return state.Invalid(false, REJECT_NONSTANDARD, strprintf("non-mandatory-script-verify-flag (%s)", ScriptErrorString(check.GetScriptError())));
