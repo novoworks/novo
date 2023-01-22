@@ -1777,6 +1777,39 @@ CAmount CWalletTx::GetAvailableCredit(bool fUseCache) const
     return nCredit;
 }
 
+CAmount CWalletTx::GetAvailableContractCredit(bool fUseCache) const
+{
+    if (pwallet == 0)
+        return 0;
+
+    // Must wait until coinbase is safely deep enough in the chain before valuing it
+    if (IsCoinBase() && GetBlocksToMaturity() > 0)
+        return 0;
+
+    if (fUseCache && fAvailableContractCreditCached)
+        return nAvailableContractCreditCached;
+
+    CAmount nCredit = 0;
+    uint256 hashTx = GetHash();
+    for (unsigned int i = 0; i < tx->vout.size(); i++)
+    {
+        if (!pwallet->IsSpent(hashTx, i))
+        {
+            const CTxOut &txout = tx->vout[i];
+            // ignore non contract
+            if (!txout.IsContract())
+                 continue;
+            nCredit += pwallet->GetCredit(txout, ISMINE_SPENDABLE);
+            if (!MoneyRange(nCredit))
+                throw std::runtime_error("CWalletTx::GetAvailableContractCredit() : value out of range");
+        }
+    }
+
+    nAvailableContractCreditCached = nCredit;
+    fAvailableContractCreditCached = true;
+    return nCredit;
+}
+
 CAmount CWalletTx::GetImmatureWatchOnlyCredit(const bool& fUseCache) const
 {
     if (IsCoinBase() && GetBlocksToMaturity() > 0 && IsInMainChain())
@@ -1811,7 +1844,7 @@ CAmount CWalletTx::GetAvailableWatchOnlyCredit(const bool& fUseCache) const
             const CTxOut &txout = tx->vout[i];
             nCredit += pwallet->GetCredit(txout, ISMINE_WATCH_ONLY);
             if (!MoneyRange(nCredit))
-                throw std::runtime_error("CWalletTx::GetAvailableCredit() : value out of range");
+                throw std::runtime_error("CWalletTx::GetAvailableWatchOnlyCredit() : value out of range");
         }
     }
 
@@ -1981,6 +2014,37 @@ CAmount CWallet::GetImmatureBalance() const
     return nTotal;
 }
 
+CAmount CWallet::GetContractBalance() const
+{
+    CAmount nTotal = 0;
+    {
+        LOCK2(cs_main, cs_wallet);
+        for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
+        {
+            const CWalletTx* pcoin = &(*it).second;
+            if (pcoin->IsTrusted())
+                nTotal += pcoin->GetAvailableContractCredit();
+        }
+    }
+
+    return nTotal;
+}
+
+CAmount CWallet::GetUnconfirmedContractBalance() const
+{
+    CAmount nTotal = 0;
+    {
+        LOCK2(cs_main, cs_wallet);
+        for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
+        {
+            const CWalletTx* pcoin = &(*it).second;
+            if (!pcoin->IsTrusted() && pcoin->GetDepthInMainChain() == 0 && pcoin->InMempool())
+                nTotal += pcoin->GetAvailableContractCredit();
+        }
+    }
+    return nTotal;
+}
+
 CAmount CWallet::GetWatchOnlyBalance() const
 {
     CAmount nTotal = 0;
@@ -2026,7 +2090,7 @@ CAmount CWallet::GetImmatureWatchOnlyBalance() const
     return nTotal;
 }
 
-void CWallet::AvailableCoins(vector<COutput> &vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, const CAmount &nMinimumAmount, const CAmount &nMaximumAmount, const CAmount &nMinimumSumAmount, const uint64_t &nMaximumCount, const int &nMinDepth, const int &nMaxDepth) const
+void CWallet::AvailableCoins(vector<COutput> &vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, bool fOnlyContract, const CAmount &nMinimumAmount, const CAmount &nMaximumAmount, const CAmount &nMinimumSumAmount, const uint64_t &nMaximumCount, const int &nMinDepth, const int &nMaxDepth) const
 {
     vCoins.clear();
 
@@ -2093,6 +2157,9 @@ void CWallet::AvailableCoins(vector<COutput> &vCoins, bool fOnlyConfirmed, const
                 continue;
 
             for (unsigned int i = 0; i < pcoin->tx->vout.size(); i++) {
+                if (fOnlyContract && !pcoin->tx->vout[i].IsContract())
+                    continue;
+
                 if (pcoin->tx->vout[i].nValue < nMinimumAmount || pcoin->tx->vout[i].nValue > nMaximumAmount)
                     continue;
 
@@ -2205,6 +2272,10 @@ bool CWallet::SelectCoinsMinConf(const CAmount& nTargetValue, const int nConfMin
 
     BOOST_FOREACH(const COutput &output, vCoins)
     {
+        // ignore contract
+        if (output.tx->tx->vout[output.i].IsContract())
+            continue;
+
         if (!output.fSpendable)
             continue;
 
@@ -2302,6 +2373,7 @@ bool CWallet::SelectCoins(const vector<COutput>& vAvailableCoins, const CAmount&
     {
         BOOST_FOREACH(const COutput& out, vCoins)
         {
+            const CTxOut &txout = out.tx->tx->vout[out.i];
             if (!out.fSpendable)
                  continue;
             nValueRet += out.tx->tx->vout[out.i].nValue;
@@ -2370,7 +2442,7 @@ bool CWallet::FundTransaction(CMutableTransaction& tx, CAmount& nFeeRet, bool ov
     for (size_t idx = 0; idx < tx.vout.size(); idx++)
     {
         const CTxOut& txOut = tx.vout[idx];
-        CRecipient recipient = {txOut.scriptPubKey, txOut.nValue, setSubtractFeeFromOutputs.count(idx) == 1};
+        CRecipient recipient = {txOut, setSubtractFeeFromOutputs.count(idx) == 1};
         vecSend.push_back(recipient);
     }
 
@@ -2426,12 +2498,12 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
     unsigned int nSubtractFeeFromAmount = 0;
     for (const auto& recipient : vecSend)
     {
-        if (nValue < 0 || recipient.nAmount < 0)
+        if (nValue < 0 || recipient.txout.nValue < 0)
         {
             strFailReason = _("Transaction amounts must not be negative");
             return false;
         }
-        nValue += recipient.nAmount;
+        nValue += recipient.txout.nValue;
 
         if (recipient.fSubtractFeeFromAmount)
             nSubtractFeeFromAmount++;
@@ -2502,7 +2574,7 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
                 // vouts to the payees
                 for (const auto& recipient : vecSend)
                 {
-                    CTxOut txout(recipient.nAmount, recipient.scriptPubKey);
+                    CTxOut txout = recipient.txout;
 
                     if (recipient.fSubtractFeeFromAmount)
                     {
@@ -2660,7 +2732,7 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
                 // and in the spirit of "smallest possible change from prior
                 // behavior."
                 for (const auto& coin : setCoins)
-                    txNew.vin.push_back(CTxIn(coin.first->GetHash(),coin.second,CScript(),
+                    txNew.vin.push_back(CTxIn(coin.first->GetHash(), coin.second, CScript(),
                                               std::numeric_limits<unsigned int>::max() - (fWalletRbf ? 2 : 1)));
 
                 // Fill in dummy signatures for fee calculation.
@@ -2771,10 +2843,11 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
             int nIn = 0;
             for (const auto& coin : setCoins)
             {
-                const CScript& scriptPubKey = coin.first->tx->vout[coin.second].scriptPubKey;
+                const CTxOut& txout = coin.first->tx->vout[coin.second];
+                const CScript& scriptPubKey = txout.scriptPubKey;
                 SignatureData sigdata;
 
-                if (!ProduceSignature(TransactionSignatureCreator(this, &txNewConst, nIn, coin.first->tx->vout[coin.second].nValue, SIGHASH_ALL), scriptPubKey, sigdata))
+                if (!ProduceSignature(TransactionSignatureCreator(this, &txNewConst, nIn, txout, SIGHASH_ALL), scriptPubKey, sigdata))
                 {
                     strFailReason = _("Signing transaction failed");
                     return false;
@@ -2855,6 +2928,34 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey, CCon
             }
         }
     }
+    return true;
+}
+
+bool CWallet::FundTokenTransaction(CMutableTransaction& tx, CWalletTx &wtx, CReserveKey& reservekey, CAmount& nFeeRet, std::string& strFailReason)
+{
+    vector<CRecipient> vecSend;
+
+    // Turn the txout set into a CRecipient vector
+    for (size_t idx = 0; idx < tx.vout.size(); idx++)
+    {
+        const CTxOut& txOut = tx.vout[idx];
+        CRecipient recipient = {txOut, false};
+        vecSend.push_back(recipient);
+    }
+
+    CCoinControl coinControl;
+    coinControl.destChange = CNoDestination();
+    coinControl.fAllowOtherInputs = true;
+    coinControl.fAllowWatchOnly = false;
+    coinControl.fOverrideFeeRate = false;
+
+    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+        coinControl.Select(txin.prevout);
+
+    int nChangePosInOut = -1;
+    if (!CreateTransaction(vecSend, wtx, reservekey, nFeeRet, nChangePosInOut, strFailReason, &coinControl, true))
+        return false;
+
     return true;
 }
 

@@ -52,7 +52,7 @@ static const bool DEFAULT_WHITELISTRELAY = true;
 /** Default for DEFAULT_WHITELISTFORCERELAY. */
 static const bool DEFAULT_WHITELISTFORCERELAY = true;
 /** Default for -minrelaytxfee, minimum relay fee for transactions */
-static const CAmount DEFAULT_MIN_RELAY_TX_FEE = 8000;
+static const CAmount DEFAULT_MIN_RELAY_TX_FEE = COIN * 25;
 //! -maxtxfee default
 //rnicoll: 8/2021 scaled down as recommended fee is lowered
 static const CAmount DEFAULT_TRANSACTION_MAXFEE = COIN * 1000;
@@ -412,8 +412,7 @@ bool TestLockPointValidity(const LockPoints* lp);
 class CScriptCheck
 {
 private:
-    CScript scriptPubKey;
-    CAmount amount;
+    CTxOut txout;
     const CTransaction *ptxTo;
     unsigned int nIn;
     unsigned int nFlags;
@@ -422,17 +421,15 @@ private:
     PrecomputedTransactionData *txdata;
 
 public:
-    CScriptCheck(): amount(0), ptxTo(0), nIn(0), nFlags(0), cacheStore(false), error(SCRIPT_ERR_UNKNOWN_ERROR) {}
-    CScriptCheck(const CCoins& txFromIn, const CTransaction& txToIn, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) :
-        scriptPubKey(txFromIn.vout[txToIn.vin[nInIn].prevout.n].scriptPubKey), amount(txFromIn.vout[txToIn.vin[nInIn].prevout.n].nValue),
-        ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), error(SCRIPT_ERR_UNKNOWN_ERROR), txdata(txdataIn) { }
+    CScriptCheck(): ptxTo(NULL), nIn(0), nFlags(0), cacheStore(false), error(SCRIPT_ERR_UNKNOWN_ERROR) {}
+    CScriptCheck(const CTxOut& txoutIn, const CTransaction& txToIn, unsigned int nInIn, unsigned int nFlagsIn, bool cacheIn, PrecomputedTransactionData* txdataIn) :
+        txout(txoutIn), ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn), error(SCRIPT_ERR_UNKNOWN_ERROR), txdata(txdataIn) { }
 
     bool operator()();
 
     void swap(CScriptCheck &check) {
-        scriptPubKey.swap(check.scriptPubKey);
+        std::swap(txout, check.txout);
         std::swap(ptxTo, check.ptxTo);
-        std::swap(amount, check.amount);
         std::swap(nIn, check.nIn);
         std::swap(nFlags, check.nFlags);
         std::swap(cacheStore, check.cacheStore);

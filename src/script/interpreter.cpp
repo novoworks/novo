@@ -1361,7 +1361,12 @@ PrecomputedTransactionData::PrecomputedTransactionData(const CTransaction& txTo)
     hashOutputs = GetOutputsHash(txTo);
 }
 
-uint256 SignatureHash(const CScript& scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType, const CAmount& amount, SigVersion sigversion, const PrecomputedTransactionData* cache)
+uint256 SignatureHash(const CScript& scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType, const CAmount& amount, SigVersion sigversion, const PrecomputedTransactionData* cache) {
+    CTxOut txout(amount, CScript());
+    return SignatureHash(scriptCode, txTo, nIn, nHashType, txout, sigversion, cache);
+}
+
+uint256 SignatureHash(const CScript& scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType, const CTxOut& txout, SigVersion sigversion, const PrecomputedTransactionData* cache)
 {
     uint256 hashPrevouts;
     uint256 hashSequence;
@@ -1395,7 +1400,16 @@ uint256 SignatureHash(const CScript& scriptCode, const CTransaction& txTo, unsig
     // may already be contain in hashSequence.
     ss << txTo.vin[nIn].prevout;
     ss << static_cast<const CScriptBase&>(scriptCode);
-    ss << amount;
+
+    if (txout.IsContract()) {
+        ss << txout.contractType;
+        ss << txout.contractID;
+        ss << txout.contractValue;
+        ss << txout.contractMaxSupply;
+        ss << txout.contractMetadata;
+    }
+
+    ss << txout.nValue;
     ss << txTo.vin[nIn].nSequence;
     // Outputs (none/one/all, depending on flags)
     ss << hashOutputs;
@@ -1425,7 +1439,7 @@ bool TransactionSignatureChecker::CheckSig(const vector<unsigned char>& vchSigIn
     int nHashType = vchSig.back();
     vchSig.pop_back();
 
-    uint256 sighash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, this->txdata);
+    uint256 sighash = SignatureHash(scriptCode, *txTo, nIn, nHashType, txout, sigversion, this->txdata);
 
     if (!VerifySignature(vchSig, pubkey, sighash))
         return false;

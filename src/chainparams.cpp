@@ -106,6 +106,9 @@ public:
         consensus.SteadyASERTHeight = 130000;
         consensus.DisableRichTxIDHeight = 130000;
 
+        // Hard fork at height 280000 to enable native token support
+        consensus.EnableNativeTokenHeight = 280000;
+
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0000000000000000000000000000000000000000000000000000d9e4a0215757");
 
@@ -163,15 +166,23 @@ public:
                 {99999, uint256S("0000000000007ff0ae9afe9a6f31918a248b47f322e012102c86745a6e16d687")},
                 {111111, uint256S("000000000000f366e4e2d11fbf159bf830315eb289ad8cb4dd5def5b4f6e267e")},
                 {116000, uint256S("0000000000011bbe9e30c805a4e3696b1d04724b4417c8a9e2397e853783ed2d")},
+                {130000, uint256S("00000000000046ecc2da4ab52be9d2528f7415fc3dcf9c1fcecc4a85f1809e38")},
+                {130001, uint256S("00000000197c9247cdd416476f0f98b4d367a0477e49dc39c7c068ea9f397ad2")},
+                {150000, uint256S("000000000001bcd342c1d0758628c1d301d4042a468e2d2525b20dc6f42a9613")},
+                {170000, uint256S("000000000000d62666dcc34d24691a69b110a2c8f7ea7454af508618653cdc42")},
+                {190000, uint256S("000000000000c4c153ab3a6b9e92da04762a493258bdd3c9c028df2b4caa01ef")},
+                {210000, uint256S("0000000000000bda2e5d5dbbd1b64b5e9a3b2467e0d1430a760c5acf2c341835")},
+                {230000, uint256S("0000000000006204e0e277462a57d1e2b1e04bf3e35fac9c31f53c7ed679125d")},
+                {250000, uint256S("00000000000097920654b26f11cc0b88a98072ec8c3a10f3661000e041bce382")},
             }};
 
+
         chainTxData = ChainTxData{
-            // Data as of block e4b4ecda4c022406c502a247c0525480268ce7abbbef632796e8ca1646425e75 (height 3854173).
-            // Tx estimate based on average of year 2021 (~40k transactions per day)
-            1642953295, // * UNIX timestamp of last checkpoint block
-            29980,   // * total number of transactions between genesis and last checkpoint
+            // Data as of block 00000000000097920654b26f11cc0b88a98072ec8c3a10f3661000e041bce382 (height 250000).
+            1673066570, // * UNIX timestamp of last checkpoint block
+            396113,   // * total number of transactions between genesis and last checkpoint
                      //   (the tx=... number in the SetBestChain debug.log lines)
-            3        // * estimated number of transactions per second after checkpoint
+            0.05      // * estimated number of transactions per second after checkpoint
         };
     }
 };
@@ -191,6 +202,7 @@ public:
         consensus.BIP34Height = 1;
         consensus.BIP34Hash = uint256S("");
         consensus.BIP66Height = 1;
+        consensus.EnableNativeTokenHeight = 1;
         consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetSpacing = 150;
         consensus.fPowNoRetargeting = false;
@@ -271,6 +283,7 @@ public:
         consensus.BIP34Height = 1;
         consensus.BIP34Hash = uint256();
         consensus.BIP66Height = 1;
+        consensus.EnableNativeTokenHeight = 1;
         consensus.powLimit = uint256S("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetSpacing = 150;
         consensus.fPowAllowMinDifficultyBlocks = true;

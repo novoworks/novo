@@ -6,6 +6,7 @@
 
 #include "base58.h"
 #include "primitives/transaction.h"
+#include "script/bignum.h"
 #include "script/script.h"
 #include "script/standard.h"
 #include "serialize.h"
@@ -177,7 +178,17 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry)
         const CTxOut& txout = tx.vout[i];
 
         UniValue out(UniValue::VOBJ);
-
+        if (txout.IsContract()) {
+            out.pushKV("contractType", CTxOut::ContractTypeString(txout.contractType));
+            out.pushKV("contractID", txout.contractID.ToFullString());
+            CBigNum bnValue;
+            bnValue.SetHex(txout.contractValue.GetHex());
+            CBigNum bnSupply;
+            bnSupply.SetHex(txout.contractMaxSupply.GetHex());
+            out.pushKV("contractValue", bnValue.ToString());
+            out.pushKV("contractMaxSupply", bnSupply.ToString());
+            out.pushKV("contractMetadata", txout.contractMetadata);
+        }
         UniValue outValue(UniValue::VNUM, FormatMoney(txout.nValue));
         out.pushKV("value", outValue);
         out.pushKV("n", (int64_t)i);
