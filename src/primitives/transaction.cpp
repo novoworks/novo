@@ -15,6 +15,13 @@ uint256 ComputeTransactionOutputsHash(const std::vector<CTxOut> &vout) {
         ssScript << CFlatData(vout[i].scriptPubKey);
 
         CHashWriter ssOut(SER_GETHASH, 0);
+        if (vout[i].IsContract()) {
+            ssOut << vout[i].contractType;
+            ssOut << vout[i].contractID;
+            ssOut << vout[i].contractValue;
+            ssOut << vout[i].contractMaxSupply;
+            ssOut << vout[i].contractMetadata;
+        }
         ssOut << vout[i].nValue;
         ssOut << ssScript.GetSHA256();
 
@@ -67,6 +74,11 @@ std::string COutPoint::ToString() const
     return strprintf("COutPoint(%s, %u)", hash.ToString().substr(0,10), n);
 }
 
+std::string COutPoint::ToFullString() const
+{
+    return strprintf("%s:%u", hash.ToString(), n);
+}
+
 CTxIn::CTxIn(COutPoint prevoutIn, CScript scriptSigIn, uint32_t nSequenceIn)
 {
     prevout = prevoutIn;
@@ -96,14 +108,36 @@ std::string CTxIn::ToString() const
     return str;
 }
 
+CTxOut::CTxOut(uint64_t contractTypeIn, COutPoint contractIDIn, uint256 contractValueIn, uint256 contractMaxSupplyIn, std::string contractMetadataIn, const CAmount& nValueIn, CScript scriptPubKeyIn)
+{
+    contractType = contractTypeIn;
+    contractID = contractIDIn;
+    contractValue = contractValueIn;
+    contractMaxSupply = contractMaxSupplyIn;
+    contractMetadata = contractMetadataIn;
+    nValue = nValueIn;
+    scriptPubKey = scriptPubKeyIn;
+}
+
 CTxOut::CTxOut(const CAmount& nValueIn, CScript scriptPubKeyIn)
 {
+    contractType = 0;
+    contractID.SetNull();
+    contractValue.SetNull();
+    contractMaxSupply.SetNull();
+    contractMetadata.clear();
     nValue = nValueIn;
     scriptPubKey = scriptPubKeyIn;
 }
 
 std::string CTxOut::ToString() const
 {
+    if (IsContract())
+        return strprintf("CTxOut(contractType=%s, contractID=%s, contractValue=%s, contractMaxSupply=%s, contractMetadata=%s, nValue=%d.%04d, scriptPubKey=%s)",
+                         ContractTypeString(contractType), contractID.ToString(), contractValue.ToString(),
+                         contractMaxSupply.ToString(), contractMetadata,
+                         nValue / COIN, nValue % COIN, HexStr(scriptPubKey).substr(0, 30));
+
     return strprintf("CTxOut(nValue=%d.%04d, scriptPubKey=%s)", nValue / COIN, nValue % COIN, HexStr(scriptPubKey).substr(0, 30));
 }
 

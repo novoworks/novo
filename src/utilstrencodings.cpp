@@ -66,6 +66,17 @@ bool IsHex(const string& str)
     return (str.size() > 0) && (str.size()%2 == 0);
 }
 
+
+bool IsNumber(const string& str)
+{
+    for(std::string::const_iterator it(str.begin()); it != str.end(); ++it)
+    {
+        if (HexDigit(*it) < 0 || HexDigit(*it) > 9)
+            return false;
+    }
+    return (str.size() > 0);
+}
+
 vector<unsigned char> ParseHex(const char* psz)
 {
     // convert hex dump to vector
@@ -701,4 +712,3 @@ bool ParseFixedPoint(const std::string &val, int decimals, int64_t *amount_out)
 
     return true;
 }
-
