@@ -282,6 +282,35 @@ public:
             *this = 0 - *this;
     }
 
+    void SetDecimal(const std::string& str)
+    {
+        const char* psz = str.c_str();
+        while (isspace(*psz))
+            psz++;
+        bool fNegative = false;
+        if (*psz == '-')
+        {
+            fNegative = true;
+            psz++;
+        }
+        while (isspace(*psz))
+            psz++;
+
+        // decimal string to bignum
+        *this = 0;
+        int n;
+        while ((n = HexDigit(*psz)) != -1)
+        {
+            if (n > 9) break;
+
+            *this *= 10;
+            *this += n;
+            ++psz;
+        }
+        if (fNegative)
+            *this = 0 - *this;
+    }
+
     std::string ToString(int nBase=10) const
     {
         CAutoBN_CTX pctx;
