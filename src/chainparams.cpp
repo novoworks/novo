@@ -106,8 +106,8 @@ public:
         consensus.SteadyASERTHeight = 130000;
         consensus.DisableRichTxIDHeight = 130000;
 
-        // Hard fork at height 280000 to enable native token support
-        consensus.EnableNativeTokenHeight = 280000;
+        // Hard fork at height 290000 to enable native token support
+        consensus.EnableNativeTokenHeight = 290000;
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0000000000000000000000000000000000000000000000000000d9e4a0215757");
