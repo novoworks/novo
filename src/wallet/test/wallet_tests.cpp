@@ -93,114 +93,109 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
         // with an empty wallet we can't even pay one coin
         BOOST_CHECK(!wallet.SelectCoinsMinConf( 1 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
 
-        add_coin(100*COIN, 4);        // add a new 100 coin output
+        add_coin(10*COIN, 4);        // add a new 10 coin output
 
         // with only a new 1 coin output, we still can't find a mature 10 coin output
-        BOOST_CHECK(!wallet.SelectCoinsMinConf( 100 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK(!wallet.SelectCoinsMinConf( 10 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
 
         // but we can find a new 10 coin output
-        BOOST_CHECK( wallet.SelectCoinsMinConf( 100 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 100 * COIN);
+        BOOST_CHECK( wallet.SelectCoinsMinConf( 10 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 10 * COIN);
 
-        add_coin(200*COIN);           // add a mature 200 coin output
+        add_coin(20*COIN);           // add a mature 20 coin output
 
-        // we can't make 300 coins of mature outputs
-        BOOST_CHECK(!wallet.SelectCoinsMinConf( 300 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
+        // we can't make 30 coins of mature outputs
+        BOOST_CHECK(!wallet.SelectCoinsMinConf( 30 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
 
-        // we can make 300 coin of new outputs
-        BOOST_CHECK( wallet.SelectCoinsMinConf( 300 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 300 * COIN);
+        // we can make 30 coin of new outputs
+        BOOST_CHECK( wallet.SelectCoinsMinConf( 30 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 30 * COIN);
 
-        add_coin(500*COIN);           // add a mature 50 coin output,
-        add_coin(1000*COIN, 3, true); // a new 100 coin output sent from one of our own addresses
-        add_coin(2000*COIN);          // and a mature 200 coin output
+        add_coin(50*COIN);           // add a mature 50 coin output,
+        add_coin(100*COIN, 3, true); // a new 100 coin output sent from one of our own addresses
+        add_coin(200*COIN);          // and a mature 200 coin output
 
         // now we have new: 10+100=110 (of which 100 was self-sent), and mature: 20+50+200=270.  total = 380
 
-        // we can't make 3800 coins only if we disallow new output:
-        BOOST_CHECK(!wallet.SelectCoinsMinConf(3800 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
+        // we can't make 380 coins only if we disallow new output:
+        BOOST_CHECK(!wallet.SelectCoinsMinConf(380 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
         // we can't even make 370 coins if we don't allow new output even if they're from us
-        BOOST_CHECK(!wallet.SelectCoinsMinConf(3800 * COIN, 6, 6, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK(!wallet.SelectCoinsMinConf(380 * COIN, 6, 6, 0, vCoins, setCoinsRet, nValueRet));
         // but we can make 370 coins if we accept new output from ourself
-        BOOST_CHECK( wallet.SelectCoinsMinConf(3700 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 3700 * COIN);
+        BOOST_CHECK( wallet.SelectCoinsMinConf(370 * COIN, 1, 6, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 370 * COIN);
         // and we can make 380 coins if we accept all new output
-        BOOST_CHECK( wallet.SelectCoinsMinConf(3800 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 3800 * COIN);
+        BOOST_CHECK( wallet.SelectCoinsMinConf(380 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 380 * COIN);
 
-        // try making 3400 coins from 100,200,500,1000,2000 - we can't do it exactly
-        BOOST_CHECK( wallet.SelectCoinsMinConf(3400 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 3500 * COIN);       // but 3500 coins is closest
-        BOOST_CHECK_EQUAL(setCoinsRet.size(), 3U);     // the best should be 2000+1000+500.  it's incredibly unlikely the 100 or 200 got included (but possible)
+        // try making 340 coins from 10,20,50,100,200 - we can't do it exactly
+        BOOST_CHECK( wallet.SelectCoinsMinConf(340 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 350 * COIN);       // but 350 coins is closest
+        BOOST_CHECK_EQUAL(setCoinsRet.size(), 3U);     // the best should be 200+100+50.  it's incredibly unlikely the 10 or 20 got included (but possible)
 
-        // when we try making 700 coins, the smaller outputs (100,200,500) are enough.  We should see just 200+500
-        BOOST_CHECK( wallet.SelectCoinsMinConf( 700 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 700 * COIN);
+        // when we try making 70 coins, the smaller outputs (10,20,50) are enough.  We should see just 20+50
+        BOOST_CHECK( wallet.SelectCoinsMinConf( 70 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 70 * COIN);
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 2U);
 
-        // when we try making 800 coins, the smaller outputs (100,200,500) are exactly enough.
-        BOOST_CHECK( wallet.SelectCoinsMinConf( 800 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK(nValueRet == 800 * COIN);
+        // when we try making 80 coins, the smaller outputs (10,20,50) are exactly enough.
+        BOOST_CHECK( wallet.SelectCoinsMinConf( 80 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK(nValueRet == 80 * COIN);
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 3U);
 
-        // when we try making 900 coins, no subset of smaller outputs is enough, and we get the next bigger output (1000)
-        BOOST_CHECK( wallet.SelectCoinsMinConf( 900 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 1000 * COIN);
+        // when we try making 90 coins, no subset of smaller outputs is enough, and we get the next bigger output (100)
+        BOOST_CHECK( wallet.SelectCoinsMinConf( 90 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 100 * COIN);
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 1U);
 
         // now clear out the wallet and start again to test choosing between subsets of smaller coins and the next biggest coin
         empty_wallet();
 
-        add_coin( 600*COIN);
-        add_coin( 700*COIN);
-        add_coin( 800*COIN);
-        add_coin(2000*COIN);
-        add_coin(3000*COIN);
-        // now we have 600+700+800+2000+3000 = 7100 coins total
+        add_coin( 60*COIN);
+        add_coin( 70*COIN);
+        add_coin( 80*COIN);
+        add_coin(200*COIN);
+        add_coin(300*COIN); // now we have 60+70+80+200+300 = 710 coins total
 
-        // check that we have 7100 and not 7110
-        BOOST_CHECK( wallet.SelectCoinsMinConf(7100 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK(!wallet.SelectCoinsMinConf(7110 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        // check that we have 710 and not 711
+        BOOST_CHECK( wallet.SelectCoinsMinConf(710 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK(!wallet.SelectCoinsMinConf(711 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
 
-        // now try making 1600 coins.  the best smaller outputs can do is 600+700+800 = 2100; not as good at the next biggest output, 2000
-        BOOST_CHECK( wallet.SelectCoinsMinConf(1600 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 2000 * COIN); // we should get 200 in one output
+        // now try making 160 coins.  the best smaller outputs can do is 60+70+80 = 210; not as good at the next biggest output, 200
+        BOOST_CHECK( wallet.SelectCoinsMinConf(160 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 200 * COIN); // we should get 200 in one output
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 1U);
 
-        add_coin( 500*COIN);
-        // now we have 500+600+700+800+2000+3000 = 7600 coins total
+        add_coin( 50*COIN); // now we have 50+60+70+80+200+300 = 750 coins total
 
-        // now if we try making 1600 coins again, the smaller outputs can make 500+600+700 = 1800 coins, better than the next biggest output, 2000
-        BOOST_CHECK( wallet.SelectCoinsMinConf(1600 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 1800 * COIN); // we should get 180 in 3 outputs
+        // now if we try making 160 coins again, the smaller outputs can make 50+60+70 = 18 coins, better than the next biggest output, 200
+        BOOST_CHECK( wallet.SelectCoinsMinConf(160 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 180 * COIN); // we should get 180 in 3 outputs
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 3U);
 
-        add_coin( 1800*COIN);
-        // now we have 500+600+700+800+1800+2000+3000 = 9400 coins total
+        add_coin( 180*COIN); // now we have 50+60+70+80+180+200+300
 
-        // and now if we try making 1600 coins again, the smaller outputs can make 500+600+700 = 1800 coins, the same as the next biggest output, 1800
-        BOOST_CHECK( wallet.SelectCoinsMinConf(1600 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 1800 * COIN);  // we should get 1800 in 1 output
+        // and now if we try making 16 coins again, the smaller outputs can make 50+60+70 = 180 coins, the same as the next biggest output, 180
+        BOOST_CHECK( wallet.SelectCoinsMinConf(160 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 180 * COIN);  // we should get 180 in 1 output
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 1U); // because in the event of a tie, the biggest output wins
 
-        // now try making 1100 coins.  we should get 500+600
-        BOOST_CHECK( wallet.SelectCoinsMinConf(1100 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 1100 * COIN);
+        // now try making 110 coins.  we should get 50+60
+        BOOST_CHECK( wallet.SelectCoinsMinConf(110 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 110 * COIN);
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 2U);
 
         // check that the smallest bigger output is used
-        add_coin( 10000*COIN);
-        add_coin( 20000*COIN);
-        add_coin( 30000*COIN);
-        add_coin( 40000*COIN);
-        // now we have 500+600+700+800+1800+2000+3000+10000+20000+30000+40000 = 109400 coins
-
-        BOOST_CHECK( wallet.SelectCoinsMinConf(9500 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 10000 * COIN);  // we should get 10000 coins in 1 output
+        add_coin( 1000*COIN);
+        add_coin( 2000*COIN);
+        add_coin( 3000*COIN);
+        add_coin( 4000*COIN); // now we have 50+60+70+80+180+200+300+1000+2000+3000+4000 = 10940 coins
+        BOOST_CHECK( wallet.SelectCoinsMinConf(950 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 1000 * COIN);  // we should get 1000 coins in 1 output
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 1U);
 
-        BOOST_CHECK( wallet.SelectCoinsMinConf(19500 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
-        BOOST_CHECK_EQUAL(nValueRet, 20000 * COIN);  // we should get 20000 coins in 1 output
+        BOOST_CHECK( wallet.SelectCoinsMinConf(1950 * COIN, 1, 1, 0, vCoins, setCoinsRet, nValueRet));
+        BOOST_CHECK_EQUAL(nValueRet, 2000 * COIN);  // we should get 2000 coins in 1 output
         BOOST_CHECK_EQUAL(setCoinsRet.size(), 1U);
 
         // empty the wallet and start again, now with fractions of a coin, to test small change avoidance
@@ -508,7 +503,7 @@ BOOST_AUTO_TEST_CASE(GetMinimumFee_test)
     CTxOut txout1(value, (CScript)vector<unsigned char>(24, 0));
     tx.vout.push_back(txout1);
 
-    int64_t nMinTxFee = 25 * 10000;
+    int64_t nMinTxFee = 8000;
 
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 250, 0, pool), nMinTxFee * 0.25);
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 1000, 0, pool), nMinTxFee * 1.0);
@@ -521,16 +516,16 @@ BOOST_AUTO_TEST_CASE(GetMinimumFee_dust_test)
     CMutableTransaction tx;
     CTxMemPool pool(payTxFee);
     CTxOut txout1(139496846, (CScript)vector<unsigned char>(24, 0)); // Regular output
-    CTxOut txout2(49999, (CScript)vector<unsigned char>(24, 0)); // Dust output
+    CTxOut txout2(4367, (CScript)vector<unsigned char>(24, 0)); // Dust output
     tx.vout.push_back(txout1);
     tx.vout.push_back(txout2);
 
-    CAmount nMinTxFee = 25 * 10000;
+    CAmount nMinTxFee = 8000;
 
     // Confirm dust penalty fees are added on
     // Because this is ran by the wallet, this takes the discardThreshold,
     // not the dust limit
-    CAmount nDustPenalty = 50000;
+    CAmount nDustPenalty = 4368;
 
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 963, 0, pool), nDustPenalty + (nMinTxFee * 0.963));
     BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(tx, 1000, 0, pool), nDustPenalty + (nMinTxFee * 1.000));

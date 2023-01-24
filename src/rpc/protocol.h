@@ -75,10 +75,6 @@ enum RPCErrorCode
     RPC_WALLET_WRONG_ENC_STATE      = -15, //!< Command given in wrong wallet encryption state (encrypting an encrypted wallet etc.)
     RPC_WALLET_ENCRYPTION_FAILED    = -16, //!< Failed to encrypt the wallet
     RPC_WALLET_ALREADY_UNLOCKED     = -17, //!< Wallet is already unlocked
-
-    RPC_WALLET_NFT_MISSING          = -32,  //!< No such NFT in wallet or account
-    RPC_WALLET_TOKEN_SUPPLY_LIMIT    = -33,  //!< TOKEN total supply is max_uint256
-    RPC_WALLET_FT_INSUFFICIENT_FUNDS   = -34,  //!< Not enough token funds in wallet or account
 };
 
 UniValue JSONRPCRequestObj(const std::string& strMethod, const UniValue& params, const UniValue& id);

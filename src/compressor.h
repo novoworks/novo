@@ -9,7 +9,6 @@
 #include "primitives/transaction.h"
 #include "script/script.h"
 #include "serialize.h"
-#include "uint256.h"
 
 class CKeyID;
 class CPubKey;
@@ -107,81 +106,12 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         if (!ser_action.ForRead()) {
-            if (txout.IsContract()) {
-
-                READWRITE(VARINT(txout.contractType));
-
-                READWRITE(txout.contractID.hash);
-                READWRITE(VARINT(txout.contractID.n));
-
-                uint64_t nSize = txout.contractValue.bytes();
-                READWRITE(VARINT(nSize));
-                if (nSize > 0) {
-                    std::vector<unsigned char> vch(txout.contractValue.begin(),
-                                                   txout.contractValue.end());
-                    vch.resize(nSize);
-                    READWRITE(REF(CFlatData(vch)));
-                }
-
-                nSize = txout.contractMaxSupply.bytes();
-                READWRITE(VARINT(nSize));
-                if (nSize > 0) {
-                    std::vector<unsigned char> vch(txout.contractMaxSupply.begin(),
-                                                   txout.contractMaxSupply.end());
-                    vch.resize(nSize);
-                    READWRITE(REF(CFlatData(vch)));
-                }
-
-                READWRITE(txout.contractMetadata);
-            }
-
             uint64_t nVal = CompressAmount(txout.nValue);
             READWRITE(VARINT(nVal));
         } else {
-            uint64_t nType = 0;
-            READWRITE(VARINT(nType));
-
-            if (nType & CTxOut::CONTRACT_FLAG && nType <= CTxOut::MAX_CONTRACT_TYPE) {
-                txout.contractType = nType;
-
-                READWRITE(txout.contractID.hash);
-                READWRITE(VARINT(txout.contractID.n));
-
-                uint64_t nSize = 0;
-                READWRITE(VARINT(nSize));
-                if (nSize > 0) {
-                    std::vector<unsigned char> vch(32, 0x00);
-                    vch.resize(nSize);
-                    READWRITE(REF(CFlatData(vch)));
-
-                    vch.resize(32);
-                    txout.contractValue = uint256(vch);
-                } else {
-                    txout.contractValue.SetNull();
-                }
-
-                // contractMaxSupply
-                READWRITE(VARINT(nSize));
-                if (nSize > 0) {
-                    std::vector<unsigned char> vch(32, 0x00);
-                    vch.resize(nSize);
-                    READWRITE(REF(CFlatData(vch)));
-
-                    vch.resize(32);
-                    txout.contractMaxSupply = uint256(vch);
-                } else {
-                    txout.contractMaxSupply.SetNull();
-                }
-
-                READWRITE(txout.contractMetadata);
-
-                uint64_t nVal = 0;
-                READWRITE(VARINT(nVal));
-                txout.nValue = DecompressAmount(nVal);
-
-            } else {
-                txout.nValue = DecompressAmount(nType);
-            }
+            uint64_t nVal = 0;
+            READWRITE(VARINT(nVal));
+            txout.nValue = DecompressAmount(nVal);
         }
         CScriptCompressor cscript(REF(txout.scriptPubKey));
         READWRITE(cscript);

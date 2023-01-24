@@ -73,16 +73,6 @@ public:
         return &data[WIDTH];
     }
 
-    unsigned int bytes() const
-    {
-        for (int pos = WIDTH - 1; pos >= 0; pos--) {
-            if (data[pos]) {
-                return pos+1;
-            }
-        }
-        return 0;
-    }
-
     unsigned int size() const
     {
         return sizeof(data);

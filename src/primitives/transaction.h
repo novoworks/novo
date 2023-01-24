@@ -54,7 +54,6 @@ public:
     }
 
     std::string ToString() const;
-    std::string ToFullString() const;
 };
 
 /** An input of a transaction.  It contains the location of the previous
@@ -133,21 +132,6 @@ public:
 class CTxOut
 {
 public:
-    static const uint64_t CONTRACT_FLAG = 0x8000000000000000;
-    static const uint64_t CONTRACT_FT = CONTRACT_FLAG | 0;
-    static const uint64_t CONTRACT_NFT = CONTRACT_FLAG | 1;
-    static const uint64_t CONTRACT_FT_MINT = CONTRACT_FLAG | 2;
-    static const uint64_t CONTRACT_NFT_MINT = CONTRACT_FLAG | 3;
-
-    static const uint64_t MAX_CONTRACT_TYPE = CONTRACT_FLAG | 3;
-    static const uint64_t MAX_CONTRACT_METADATA_SIZE = 1024;
-
-    uint64_t contractType;
-    COutPoint contractID;
-    uint256 contractValue;
-    uint256 contractMaxSupply;
-    std::string contractMetadata;
-
     CAmount nValue;
     CScript scriptPubKey;
 
@@ -157,48 +141,17 @@ public:
     }
 
     CTxOut(const CAmount& nValueIn, CScript scriptPubKeyIn);
-    CTxOut(uint64_t contractTypeIn, COutPoint contractIDIn, uint256 contractValueIn, uint256 contractMaxSupplyIn, std::string contractMetadataIn, const CAmount& nValueIn, CScript scriptPubKeyIn);
 
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        if (!ser_action.ForRead()) {
-            if (IsContract()) {
-                READWRITE(contractType);
-                READWRITE(contractID);
-                READWRITE(contractValue);
-                READWRITE(contractMaxSupply);
-                READWRITE(contractMetadata);
-            }
-            READWRITE(nValue);
-        } else {
-            SetNull();
-
-            uint64_t nType = 0;
-            READWRITE(nType);
-            if (nType & CONTRACT_FLAG && nType <= MAX_CONTRACT_TYPE) {
-                contractType = nType;
-
-                READWRITE(contractID);
-                READWRITE(contractValue);
-                READWRITE(contractMaxSupply);
-                READWRITE(contractMetadata);
-                READWRITE(nValue);
-            } else {
-                nValue = nType;
-            }
-        }
+        READWRITE(nValue);
         READWRITE(*(CScriptBase*)(&scriptPubKey));
     }
 
     void SetNull()
     {
-        contractType = 0;
-        contractID.SetNull();
-        contractValue.SetNull();
-        contractMaxSupply.SetNull();
-        contractMetadata.clear();
         nValue = -1;
         scriptPubKey.clear();
     }
@@ -217,48 +170,10 @@ public:
       return (nValue < dustLimit);
     }
 
-    bool IsContract() const
-    {
-        return (contractType & CONTRACT_FLAG && contractType <= MAX_CONTRACT_TYPE);
-    }
-
-    static const char* ContractTypeString(const uint64_t nType) {
-        switch (nType) {
-        case CONTRACT_FT:
-            return "FT";
-        case CONTRACT_NFT:
-            return "NFT";
-        case CONTRACT_FT_MINT:
-            return "FT_MINT";
-        case CONTRACT_NFT_MINT:
-            return "NFT_MINT";
-        default: break;
-        }
-        return "Unknown";
-    }
-
-    static const uint64_t GetContractTypeByName(const std::string sTypeName) {
-        if (sTypeName == "FT") {
-            return CONTRACT_FT;
-        } else if (sTypeName == "NFT") {
-            return CONTRACT_NFT;
-        } else if (sTypeName == "FT_MINT") {
-            return CONTRACT_FT_MINT;
-        } else if (sTypeName == "NFT_MINT") {
-            return CONTRACT_NFT_MINT;
-        }
-        return 0;
-    }
-
     friend bool operator==(const CTxOut& a, const CTxOut& b)
     {
-        return (a.contractType  == b.contractType &&
-                a.contractID    == b.contractID &&
-                a.contractValue == b.contractValue &&
-                a.contractMaxSupply == b.contractMaxSupply &&
-                a.contractMetadata  == b.contractMetadata &&
-                a.nValue        == b.nValue &&
-                a.scriptPubKey  == b.scriptPubKey);
+        return (a.nValue       == b.nValue &&
+                a.scriptPubKey == b.scriptPubKey);
     }
 
     friend bool operator!=(const CTxOut& a, const CTxOut& b)
@@ -293,6 +208,7 @@ inline void UnserializeTransaction(TxType& tx, Stream& s) {
 
 template<typename Stream, typename TxType>
 inline void SerializeTransaction(const TxType& tx, Stream& s) {
+
     s << tx.nVersion;
     s << tx.vin;
     s << tx.vout;

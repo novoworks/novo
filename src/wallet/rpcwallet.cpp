@@ -5,7 +5,6 @@
 
 #include "amount.h"
 #include "base58.h"
-#include "script/bignum.h"
 #include "chain.h"
 #include "consensus/validation.h"
 #include "core_io.h"
@@ -342,12 +341,12 @@ UniValue getaddressesbyaccount(const JSONRPCRequest& request)
 static void SendMoney(const CTxDestination &address, CAmount nValue, bool fSubtractFeeFromAmount, CWalletTx& wtxNew)
 {
     CAmount curBalance = pwalletMain->GetBalance();
-    CAmount curContractBalance = pwalletMain->GetContractBalance();
+
     // Check amount
     if (nValue <= 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid amount");
 
-    if (nValue > curBalance-curContractBalance)
+    if (nValue > curBalance)
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Insufficient funds");
 
     if (pwalletMain->GetBroadcastTransactions() && !g_connman)
@@ -362,10 +361,10 @@ static void SendMoney(const CTxDestination &address, CAmount nValue, bool fSubtr
     std::string strError;
     vector<CRecipient> vecSend;
     int nChangePosRet = -1;
-    CRecipient recipient = {CTxOut(nValue, scriptPubKey), fSubtractFeeFromAmount};
+    CRecipient recipient = {scriptPubKey, nValue, fSubtractFeeFromAmount};
     vecSend.push_back(recipient);
     if (!pwalletMain->CreateTransaction(vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError)) {
-        if (!fSubtractFeeFromAmount && nValue + nFeeRequired > curBalance-curContractBalance)
+        if (!fSubtractFeeFromAmount && nValue + nFeeRequired > curBalance)
             strError = strprintf("Error: This transaction requires a transaction fee of at least %s", FormatMoney(nFeeRequired));
         throw JSONRPCError(RPC_WALLET_ERROR, strError);
     }
@@ -430,415 +429,6 @@ UniValue sendtoaddress(const JSONRPCRequest& request)
     EnsureWalletIsUnlocked();
 
     SendMoney(address.Get(), nAmount, fSubtractFeeFromAmount, wtx);
-
-    return wtx.GetHash().GetHex();
-}
-
-UniValue createtoken(const JSONRPCRequest& request)
-{
-    if (!EnsureWalletIsAvailable(request.fHelp))
-        return NullUniValue;
-
-    if (request.fHelp || request.params.size() != 4)
-        throw runtime_error(
-            "createtoken \"type\" \"maxsupply\" \"metadata\" \"address\"\n"
-            "\nCreate a token to a given address.\n"
-            + HelpRequiringPassphrase() +
-            "\nArguments:\n"
-            "1. \"type\"               (string, required) FT or NFT\n"
-            "2. \"maxsupply\"          (string, required) The decimal token maxsupply(uint256)\n"
-            "3. \"metadata\"           (string, required) The token metadata\n"
-            "4. \"address\"            (string, required) The novo address to send to.\n"
-            "\nResult:\n"
-            "\"txid:vout\"             (string) The token ID.\n"
-            "\nExamples:\n"
-            + HelpExampleCli("createtoken", "\"FT\" 42 \"{...}\" \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-            + HelpExampleRpc("createtoken", "\"FT\" \"42\" \"{...}\" \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-        );
-
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-
-    if (pwalletMain->GetBroadcastTransactions() && !g_connman)
-        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
-
-    uint64_t contractType = CTxOut::GetContractTypeByName(request.params[0].get_str());
-    if (contractType != CTxOut::CONTRACT_NFT && contractType != CTxOut::CONTRACT_FT)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, invalid token type: ")+request.params[0].get_str());
-
-    string contractValueDecimal = request.params[1].get_str();
-    if (!IsNumber(contractValueDecimal))
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected decimal maxsupply");
-    CBigNum num;
-    num.SetDecimal(contractValueDecimal);
-    if (num.GetHex().length() > 64)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, maxsupply too big");
-    uint256 contractMaxSupply = uint256S(num.GetHex());
-
-    uint256 contractValue;
-    if (contractType == CTxOut::CONTRACT_NFT) {
-        contractType = CTxOut::CONTRACT_NFT_MINT;
-    } else if (contractType == CTxOut::CONTRACT_FT) {
-        contractType = CTxOut::CONTRACT_FT_MINT;
-    }
-
-    string contractMetadata = request.params[2].get_str();
-    if (contractMetadata.size() > CTxOut::MAX_CONTRACT_METADATA_SIZE)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, metadata too long");
-
-    CNovoAddress address(request.params[3].get_str());
-    if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Novo address");
-
-    // Amount
-    CAmount nAmount = nHardDustLimit;
-
-    EnsureWalletIsUnlocked();
-
-    CAmount curBalance = pwalletMain->GetBalance();
-    CAmount curContractBalance = pwalletMain->GetContractBalance();
-    if (nAmount > curBalance-curContractBalance)
-        throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Insufficient funds");
-
-    CWalletTx wtx;
-    // Parse Novo address
-    CScript scriptPubKey = GetScriptForDestination(address.Get());
-
-    // Create and send the transaction
-    CReserveKey reservekey(pwalletMain);
-    CAmount nFeeRequired;
-    std::string strError;
-    vector<CRecipient> vecSend;
-    int nChangePosRet = 1;
-    CRecipient recipient = {CTxOut(contractType, COutPoint(), contractValue, contractMaxSupply, contractMetadata, nAmount, scriptPubKey), false};
-    vecSend.push_back(recipient);
-    if (!pwalletMain->CreateTransaction(vecSend, wtx, reservekey, nFeeRequired, nChangePosRet, strError)) {
-        if (nAmount + nFeeRequired > curBalance-curContractBalance)
-            strError = strprintf("Error: This transaction requires a transaction fee of at least %s", FormatMoney(nFeeRequired));
-        throw JSONRPCError(RPC_WALLET_ERROR, strError);
-    }
-    CValidationState state;
-    if (!pwalletMain->CommitTransaction(wtx, reservekey, g_connman.get(), state)) {
-        strError = strprintf("Error: The transaction was rejected! Reason given: %s", state.GetRejectReason());
-        throw JSONRPCError(RPC_WALLET_ERROR, strError);
-    }
-
-    return COutPoint(wtx.GetHash(), 0).ToFullString();
-}
-
-UniValue transfertoken(const JSONRPCRequest& request)
-{
-    if (!EnsureWalletIsAvailable(request.fHelp))
-        return NullUniValue;
-
-    if (request.fHelp || request.params.size() != 4)
-        throw runtime_error(
-            "transfertoken \"type\" \"id\" \"value\" \"address\"\n"
-            "\nSend FT/NFT to a given address.\n"
-            + HelpRequiringPassphrase() +
-            "\nArguments:\n"
-            "1. \"type\"               (string, required) FT or NFT\n"
-            "2. \"id\"                 (string, required) The transaction id:vout of token id\n"
-            "3. \"value\"              (string, required) The decimal token value(uint256), FT value or NFT token_id\n"
-            "4. \"address\"            (string, required) The novo address to send to.\n"
-            "\nResult:\n"
-            "\"txid\"                  (string) The transaction id.\n"
-            "\nExamples:\n"
-            + HelpExampleCli("transfertoken", "\"NFT\" \"09aa6c4d3ae18d7e7d75130573bcc8c81ccc330dc715704f4afb06cf7bea6c42:0\" 1 \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-            + HelpExampleRpc("transfertoken", "\"NFT\" \"09aa6c4d3ae18d7e7d75130573bcc8c81ccc330dc715704f4afb06cf7bea6c42:0\" \"1\" \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-        );
-
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-
-    if (pwalletMain->GetBroadcastTransactions() && !g_connman)
-        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
-
-    string contractID = request.params[1].get_str();
-    if (contractID.length() < 65)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected txid:vout for id");
-
-    string contractIDtxidHex = contractID.substr(0, 64);
-    if (!IsHex(contractIDtxidHex))
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected hex id.txid");
-    uint256 contractIDtxid = uint256S(contractIDtxidHex);
-
-    uint32_t contractIDvout;
-    if (!ParseUInt32(contractID.substr(65, contractID.length()),&contractIDvout))
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected int id.vout");
-
-    string contractValueDecimal = request.params[2].get_str();
-    if (!IsNumber(contractValueDecimal))
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected decimal value");
-    CBigNum num;
-    num.SetDecimal(contractValueDecimal);
-    if (num.GetHex().length() > 64)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, value too big");
-    uint256 contractValue = uint256S(num.GetHex());
-
-    CNovoAddress address(request.params[3].get_str());
-    if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Novo address");
-
-    // Amount
-    CAmount nAmount = nHardDustLimit;
-
-    EnsureWalletIsUnlocked();
-
-    CAmount curBalance = pwalletMain->GetBalance();
-    CAmount curContractBalance = pwalletMain->GetContractBalance();
-    if (nAmount > curBalance-curContractBalance)
-        throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Insufficient funds");
-
-    // Parse Novo address
-    CScript scriptPubKey = GetScriptForDestination(address.Get());
-
-
-    bool isNFT = false;
-    arith_uint256 contractValueIn = arith_uint256();
-    CMutableTransaction txNew;
-    bool success = false;
-    vector<COutput> vecOutputs;
-    pwalletMain->AvailableCoins(vecOutputs, true, NULL, true);
-    BOOST_FOREACH(const COutput& out, vecOutputs) {
-        CTxDestination address;
-        const CTxOut &txout = out.tx->tx->vout[out.i];
-
-        if (txout.contractID.IsNull() && (out.tx->tx->GetHash() != contractIDtxid || out.i != contractIDvout)) {
-            continue;
-        }
-        if (!txout.contractID.IsNull() && txout.contractID != COutPoint(contractIDtxid, contractIDvout)) {
-            continue;
-        }
-
-        if (txout.contractType == CTxOut::CONTRACT_NFT && txout.contractValue == contractValue) {
-            isNFT = true;
-            txNew.vin.push_back(CTxIn(out.tx->tx->GetHash(), out.i, CScript(), std::numeric_limits<unsigned int>::max()));
-            txNew.vout.push_back(CTxOut(CTxOut::CONTRACT_NFT,
-                                        COutPoint(contractIDtxid, contractIDvout),
-                                        txout.contractValue,
-                                        txout.contractMaxSupply,
-                                        txout.contractMetadata,
-                                        nAmount,
-                                        scriptPubKey));
-            success = true;
-            break;
-        }
-
-        if (txout.contractType == CTxOut::CONTRACT_FT) {
-            txNew.vin.push_back(CTxIn(out.tx->tx->GetHash(), out.i, CScript(), std::numeric_limits<unsigned int>::max()));
-
-            contractValueIn += UintToArith256(txout.contractValue);
-            if (contractValueIn < UintToArith256(contractValue))
-                continue;
-
-            txNew.vout.push_back(CTxOut(CTxOut::CONTRACT_FT,
-                                        COutPoint(contractIDtxid, contractIDvout),
-                                        contractValue,
-                                        txout.contractMaxSupply,
-                                        txout.contractMetadata,
-                                        nAmount,
-                                        scriptPubKey));
-
-            // ft change
-            if (contractValueIn > UintToArith256(contractValue))
-                txNew.vout.push_back(CTxOut(CTxOut::CONTRACT_FT,
-                                            COutPoint(contractIDtxid, contractIDvout),
-                                            ArithToUint256(contractValueIn - UintToArith256(contractValue)),
-                                            txout.contractMaxSupply,
-                                            txout.contractMetadata,
-                                            txout.nValue,
-                                            txout.scriptPubKey));
-
-            success = true;
-            break;
-        }
-    }
-
-    if (!success)
-        throw JSONRPCError(RPC_WALLET_FT_INSUFFICIENT_FUNDS, (isNFT ? "Missing NFT":"FT insufficient funds"));
-
-    CWalletTx wtx;
-    CAmount nFeeOut;
-    string strFailReason;
-    CReserveKey reservekey(pwalletMain);
-    if(!pwalletMain->FundTokenTransaction(txNew, wtx, reservekey, nFeeOut, strFailReason))
-        throw JSONRPCError(RPC_WALLET_ERROR, strFailReason);
-
-    CValidationState state;
-    if (!pwalletMain->CommitTransaction(wtx, reservekey, g_connman.get(), state)) {
-        std::string strError = strprintf("Error: The transaction was rejected! Reason given: %s", state.GetRejectReason());
-        throw JSONRPCError(RPC_WALLET_ERROR, strError);
-    }
-
-    return wtx.GetHash().GetHex();
-}
-
-UniValue minttoken(const JSONRPCRequest& request)
-{
-    if (!EnsureWalletIsAvailable(request.fHelp))
-        return NullUniValue;
-
-    if (request.fHelp || request.params.size() != 4)
-        throw runtime_error(
-            "minttoken \"type\" \"id\" \"data\" \"address\"\n"
-            "\nMint NFT/FT to a given address.\n"
-            + HelpRequiringPassphrase() +
-            "\nArguments:\n"
-            "1. \"type\"               (string, required) FT or NFT\n"
-            "2. \"id\"                 (string, required) The transaction id:vout of token id\n"
-            "3. \"data\"               (string, required) FT: the decimal token value(uint256). NFT: the token metadata\n"
-            "4. \"address\"            (string, required) The novo address to send to.\n"
-            "\nResult:\n"
-            "\"txid\"                  (string) The transaction id.\n"
-            "\nExamples:\n"
-            + HelpExampleCli("minttoken", "\"FT\" \"e0a0fd79e6c670720b9b075d54129421b3435ba10132bb9c147dce8e4918d9ca:0\" \"1\" \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-            + HelpExampleCli("minttoken", "\"NFT\" \"3308a4200583b37fd5df982287fdc8ee2ac9cc92c1b52a1811d421bbe30484e9:0\" \"{...}\" \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-            + HelpExampleRpc("minttoken", "\"FT\" \"e0a0fd79e6c670720b9b075d54129421b3435ba10132bb9c147dce8e4918d9ca:0\" \"1\" \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-            + HelpExampleRpc("minttoken", "\"NFT\" \"3308a4200583b37fd5df982287fdc8ee2ac9cc92c1b52a1811d421bbe30484e9:0\" \"{...}\" \"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\"")
-        );
-
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-
-    if (pwalletMain->GetBroadcastTransactions() && !g_connman)
-        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
-
-    uint64_t contractType = CTxOut::GetContractTypeByName(request.params[0].get_str());
-    if (!contractType)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, invalid token type: ")+request.params[0].get_str());
-
-    string contractID = request.params[1].get_str();
-    if (contractID.length() < 65)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected txid:vout for id");
-
-    string contractIDtxidHex = contractID.substr(0, 64);
-    if (!IsHex(contractIDtxidHex))
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected hex id.txid");
-    uint256 contractIDtxid = uint256S(contractIDtxidHex);
-
-    uint32_t contractIDvout;
-    if (!ParseUInt32(contractID.substr(65, contractID.length()),&contractIDvout))
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected int id.vout");
-
-    string contractMetadata = request.params[2].get_str();
-    uint256 contractValue;
-    if (contractType == CTxOut::CONTRACT_NFT) {
-        if (contractMetadata.size() > CTxOut::MAX_CONTRACT_METADATA_SIZE)
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, metadata too long");
-    } else if (contractType == CTxOut::CONTRACT_FT) {
-        string contractValueDecimal = request.params[2].get_str();
-        if (!IsNumber(contractValueDecimal))
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected decimal value");
-        CBigNum num;
-        num.SetDecimal(contractValueDecimal);
-        if (num.GetHex().length() > 64)
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, value too big");
-        contractValue = uint256S(num.GetHex());
-    }
-
-    CNovoAddress address(request.params[3].get_str());
-    if (!address.IsValid())
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Novo address");
-
-    // Amount
-    CAmount nAmount = nHardDustLimit;
-
-    EnsureWalletIsUnlocked();
-
-    CAmount curBalance = pwalletMain->GetBalance();
-    CAmount curContractBalance = pwalletMain->GetContractBalance();
-    if (nAmount > curBalance-curContractBalance)
-        throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Insufficient funds");
-
-    // Parse Novo address
-    CScript scriptPubKey = GetScriptForDestination(address.Get());
-
-    CMutableTransaction txNew;
-    bool success = false;
-    vector<COutput> vecOutputs;
-    pwalletMain->AvailableCoins(vecOutputs, true, NULL, true);
-    BOOST_FOREACH(const COutput& out, vecOutputs) {
-        CTxDestination address;
-        const CTxOut &txout = out.tx->tx->vout[out.i];
-
-        if (txout.contractID.IsNull() && (out.tx->tx->GetHash() != contractIDtxid || out.i != contractIDvout)) {
-            continue;
-        }
-        if (!txout.contractID.IsNull() && txout.contractID != COutPoint(contractIDtxid, contractIDvout)) {
-            continue;
-        }
-
-        if (contractType == CTxOut::CONTRACT_FT) {
-            if (txout.contractType != CTxOut::CONTRACT_FT_MINT)
-                continue;
-
-            if (UintToArith256(txout.contractMaxSupply) < UintToArith256(txout.contractValue) + UintToArith256(contractValue))
-                throw JSONRPCError(RPC_WALLET_TOKEN_SUPPLY_LIMIT, "Token supply limit reached");
-
-            txNew.vin.push_back(CTxIn(out.tx->tx->GetHash(), out.i, CScript(), std::numeric_limits<unsigned int>::max()));
-
-            txNew.vout.push_back(CTxOut(CTxOut::CONTRACT_FT_MINT,
-                                        COutPoint(contractIDtxid, contractIDvout),
-                                        ArithToUint256(UintToArith256(txout.contractValue) + UintToArith256(contractValue)),
-                                        txout.contractMaxSupply,
-                                        txout.contractMetadata,
-                                        txout.nValue,
-                                        txout.scriptPubKey));
-
-            txNew.vout.push_back(CTxOut(CTxOut::CONTRACT_FT,
-                                        COutPoint(contractIDtxid, contractIDvout),
-                                        contractValue,
-                                        txout.contractMaxSupply,
-                                        txout.contractMetadata,
-                                        nAmount,
-                                        scriptPubKey));
-            success = true;
-            break;
-        }
-
-        if (contractType == CTxOut::CONTRACT_NFT) {
-            if (txout.contractType != CTxOut::CONTRACT_NFT_MINT)
-                continue;
-
-            uint256 contractNextTokenID = ArithToUint256(UintToArith256(txout.contractValue) + 1);
-            if (txout.contractMaxSupply == contractNextTokenID)
-                throw JSONRPCError(RPC_WALLET_TOKEN_SUPPLY_LIMIT, "Token supply limit reached");
-
-            txNew.vin.push_back(CTxIn(out.tx->tx->GetHash(), out.i, CScript(), std::numeric_limits<unsigned int>::max()));
-
-            txNew.vout.push_back(CTxOut(CTxOut::CONTRACT_NFT_MINT,
-                                        COutPoint(contractIDtxid, contractIDvout),
-                                        contractNextTokenID,
-                                        txout.contractMaxSupply,
-                                        txout.contractMetadata,
-                                        txout.nValue,
-                                        txout.scriptPubKey));
-
-            txNew.vout.push_back(CTxOut(CTxOut::CONTRACT_NFT,
-                                        COutPoint(contractIDtxid, contractIDvout),
-                                        contractNextTokenID,
-                                        txout.contractMaxSupply,
-                                        contractMetadata,
-                                        nAmount,
-                                        scriptPubKey));
-            success = true;
-            break;
-        }
-    }
-
-    if (!success)
-        throw JSONRPCError(RPC_WALLET_NFT_MISSING, "Missing Token Mint");
-
-    CWalletTx wtx;
-    CAmount nFeeOut;
-    string strFailReason;
-    CReserveKey reservekey(pwalletMain);
-    if(!pwalletMain->FundTokenTransaction(txNew, wtx, reservekey, nFeeOut, strFailReason))
-        throw JSONRPCError(RPC_WALLET_ERROR, strFailReason);
-
-    CValidationState state;
-    if (!pwalletMain->CommitTransaction(wtx, reservekey, g_connman.get(), state)) {
-        std::string strError = strprintf("Error: The transaction was rejected! Reason given: %s", state.GetRejectReason());
-        throw JSONRPCError(RPC_WALLET_ERROR, strError);
-    }
 
     return wtx.GetHash().GetHex();
 }
@@ -1063,6 +653,7 @@ UniValue getreceivedbyaccount(const JSONRPCRequest& request)
 
     return ValueFromAmount(nAmount);
 }
+
 
 UniValue getbalance(const JSONRPCRequest& request)
 {
@@ -1372,7 +963,7 @@ UniValue sendmany(const JSONRPCRequest& request)
                 fSubtractFeeFromAmount = true;
         }
 
-        CRecipient recipient = {CTxOut(nAmount, scriptPubKey), fSubtractFeeFromAmount};
+        CRecipient recipient = {scriptPubKey, nAmount, fSubtractFeeFromAmount};
         vecSend.push_back(recipient);
     }
 
@@ -2650,8 +2241,6 @@ UniValue getwalletinfo(const JSONRPCRequest& request)
             "  \"balance\": xxxxxxx,           (numeric) the total confirmed balance of the wallet in " + CURRENCY_UNIT + "\n"
             "  \"unconfirmed_balance\": xxx,   (numeric) the total unconfirmed balance of the wallet in " + CURRENCY_UNIT + "\n"
             "  \"immature_balance\": xxxxxx,   (numeric) the total immature balance of the wallet in " + CURRENCY_UNIT + "\n"
-            "  \"contract_balance\": xxxxxxx,           (numeric) the token only confirmed balance of the wallet in " + CURRENCY_UNIT + "\n"
-            "  \"unconfirmed_contract_balance\": xxx,   (numeric) the token only unconfirmed balance of the wallet in " + CURRENCY_UNIT + "\n"
             "  \"txcount\": xxxxxxx,           (numeric) the total number of transactions in the wallet\n"
             "  \"keypoololdest\": xxxxxx,      (numeric) the timestamp (seconds since Unix epoch) of the oldest pre-generated key in the key pool\n"
             "  \"keypoolsize\": xxxx,          (numeric) how many new keys are pre-generated\n"
@@ -2671,8 +2260,6 @@ UniValue getwalletinfo(const JSONRPCRequest& request)
     obj.pushKV("balance",       ValueFromAmount(pwalletMain->GetBalance()));
     obj.pushKV("unconfirmed_balance", ValueFromAmount(pwalletMain->GetUnconfirmedBalance()));
     obj.pushKV("immature_balance",    ValueFromAmount(pwalletMain->GetImmatureBalance()));
-    obj.pushKV("contract_balance",    ValueFromAmount(pwalletMain->GetContractBalance()));
-    obj.pushKV("unconfirmed_contract_balance", ValueFromAmount(pwalletMain->GetUnconfirmedContractBalance()));
     obj.pushKV("txcount",       (int)pwalletMain->mapWallet.size());
     obj.pushKV("keypoololdest", pwalletMain->GetOldestKeyPoolTime());
     obj.pushKV("keypoolsize",   (int)pwalletMain->GetKeyPoolSize());
@@ -2742,7 +2329,6 @@ UniValue listunspent(const JSONRPCRequest& request)
             "      \"maximumAmount\"    (numeric or string, default=unlimited) Maximum value of each UTXO in " + CURRENCY_UNIT + "\n"
             "      \"maximumCount\"     (numeric or string, default=unlimited) Maximum number of UTXOs\n"
             "      \"minimumSumAmount\" (numeric or string, default=unlimited) Minimum sum value of all UTXOs in " + CURRENCY_UNIT + "\n"
-            "      \"onlyContract\"     (bool, default=false) list contract UTXOs only\n"
             "    }\n"
             "\nResult\n"
             "[                   (array of json object)\n"
@@ -2753,11 +2339,6 @@ UniValue listunspent(const JSONRPCRequest& request)
             "    \"account\" : \"account\",    (string) DEPRECATED. The associated account, or \"\" for the default account\n"
             "    \"scriptPubKey\" : \"key\",   (string) the script key\n"
             "    \"amount\" : x.xxx,         (numeric) the transaction output amount in " + CURRENCY_UNIT + "\n"
-            "    \"contractType\" : \"FT\",    (string) The contract type\n"
-            "    \"contractID\" : \"id:vout\", (string) The contract id\n"
-            "    \"contractValue\" : \"\",     (string) The contract value\n"
-            "    \"contractMaxSupply\" : \"\", (string) The contract max supply\n"
-            "    \"contractMetadata\" : \"\",  (string) The contract metadata\n"
             "    \"confirmations\" : n,      (numeric) The number of confirmations\n"
             "    \"redeemScript\" : n        (string) The redeemScript if scriptPubKey is P2SH\n"
             "    \"spendable\" : xxx,        (bool) Whether we have the private keys to spend this output\n"
@@ -2812,8 +2393,6 @@ UniValue listunspent(const JSONRPCRequest& request)
     CAmount nMinimumSumAmount = MAX_MONEY;
     uint64_t nMaximumCount = 0;
 
-    bool fOnlyContract = false;
-
     if (request.params.size() > 4) {
         const UniValue& options = request.params[4].get_obj();
 
@@ -2828,8 +2407,6 @@ UniValue listunspent(const JSONRPCRequest& request)
 
         if (options.exists("maximumCount"))
             nMaximumCount = options["maximumCount"].get_int64();
-
-        fOnlyContract = options["onlyContract"].get_bool();
     }
 
     UniValue results(UniValue::VARR);
@@ -2837,11 +2414,11 @@ UniValue listunspent(const JSONRPCRequest& request)
     assert(pwalletMain != NULL);
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
-    pwalletMain->AvailableCoins(vecOutputs, !include_unsafe, NULL, fOnlyContract, nMinimumAmount, nMaximumAmount, nMinimumSumAmount, nMaximumCount, nMinDepth, nMaxDepth);
+    pwalletMain->AvailableCoins(vecOutputs, !include_unsafe, NULL, nMinimumAmount, nMaximumAmount, nMinimumSumAmount, nMaximumCount, nMinDepth, nMaxDepth);
     BOOST_FOREACH(const COutput& out, vecOutputs) {
         CTxDestination address;
-        const CTxOut &txout = out.tx->tx->vout[out.i];
-        bool fValidAddress = ExtractDestination(txout.scriptPubKey, address);
+        const CScript& scriptPubKey = out.tx->tx->vout[out.i].scriptPubKey;
+        bool fValidAddress = ExtractDestination(scriptPubKey, address);
 
         if (setAddress.size() && (!fValidAddress || !setAddress.count(address)))
             continue;
@@ -2856,7 +2433,7 @@ UniValue listunspent(const JSONRPCRequest& request)
             if (pwalletMain->mapAddressBook.count(address))
                 entry.pushKV("account", pwalletMain->mapAddressBook[address].name);
 
-            if (txout.scriptPubKey.IsPayToScriptHash()) {
+            if (scriptPubKey.IsPayToScriptHash()) {
                 const CScriptID& hash = boost::get<CScriptID>(address);
                 CScript redeemScript;
                 if (pwalletMain->GetCScript(hash, redeemScript))
@@ -2864,176 +2441,8 @@ UniValue listunspent(const JSONRPCRequest& request)
             }
         }
 
-        entry.pushKV("scriptPubKey", HexStr(txout.scriptPubKey.begin(), txout.scriptPubKey.end()));
-        entry.pushKV("amount", ValueFromAmount(txout.nValue));
-        if (txout.IsContract()) {
-            entry.pushKV("contractType", CTxOut::ContractTypeString(txout.contractType));
-            entry.pushKV("contractID", txout.contractID.ToFullString());
-            CBigNum bnValue;
-            bnValue.SetHex(txout.contractValue.GetHex());
-            CBigNum bnSupply;
-            bnSupply.SetHex(txout.contractMaxSupply.GetHex());
-            entry.pushKV("contractValue", bnValue.ToString());
-            entry.pushKV("contractMaxSupply", bnSupply.ToString());
-            entry.pushKV("contractMetadata", txout.contractMetadata);
-        }
-        entry.pushKV("confirmations", out.nDepth);
-        entry.pushKV("spendable", out.fSpendable);
-        entry.pushKV("solvable", out.fSolvable);
-        results.push_back(entry);
-    }
-
-    return results;
-}
-
-UniValue listcontractunspent(const JSONRPCRequest& request)
-{
-    if (!EnsureWalletIsAvailable(request.fHelp))
-        return NullUniValue;
-
-    if (request.fHelp || request.params.size() > 5)
-        throw runtime_error(
-            "listcontractunspent ( minconf maxconf  [\"addresses\",...] [include_unsafe] [query_options])\n"
-            "\nReturns array of unspent contract-only transaction outputs\n"
-            "with between minconf and maxconf (inclusive) confirmations.\n"
-            "Optionally filter to only include txouts paid to specified addresses.\n"
-            "\nArguments:\n"
-            "1. minconf          (numeric, optional, default=1) The minimum confirmations to filter\n"
-            "2. maxconf          (numeric, optional, default=9999999) The maximum confirmations to filter\n"
-            "3. \"addresses\"      (string) A json array of novo addresses to filter\n"
-            "    [\n"
-            "      \"address\"     (string) novo address\n"
-            "      ,...\n"
-            "    ]\n"
-            "4. include_unsafe (bool, optional, default=true) Include outputs that are not safe to spend\n"
-            "                  because they come from unconfirmed untrusted transactions or unconfirmed\n"
-            "                  replacement transactions (cases where we are less sure that a conflicting\n"
-            "                  transaction won't be mined).\n"
-            "5. query_options    (json, optional) JSON with query options\n"
-            "    {\n"
-            "      \"maximumCount\"     (numeric or string, default=unlimited) Maximum number of UTXOs\n"
-            "    }\n"
-            "\nResult\n"
-            "[                   (array of json object)\n"
-            "  {\n"
-            "    \"txid\" : \"txid\",          (string) the transaction id \n"
-            "    \"vout\" : n,               (numeric) the vout value\n"
-            "    \"address\" : \"address\",    (string) the novo address\n"
-            "    \"account\" : \"account\",    (string) DEPRECATED. The associated account, or \"\" for the default account\n"
-            "    \"scriptPubKey\" : \"key\",   (string) the script key\n"
-            "    \"amount\" : x.xxx,         (numeric) the transaction output amount in " + CURRENCY_UNIT + "\n"
-            "    \"contractType\" : \"FT\",       (string) The contract type\n"
-            "    \"contractID\" : \"id:vout\",    (string) The contract id\n"
-            "    \"contractValue\" : \"\",        (string) The contract value\n"
-            "    \"contractMaxSupply\" : \"\",    (string) The contract max supply\n"
-            "    \"contractMetadata\" : \"\",     (string) The contract metadata\n"
-            "    \"confirmations\" : n,      (numeric) The number of confirmations\n"
-            "    \"redeemScript\" : n        (string) The redeemScript if scriptPubKey is P2SH\n"
-            "    \"spendable\" : xxx,        (bool) Whether we have the private keys to spend this output\n"
-            "    \"solvable\" : xxx          (bool) Whether we know how to spend this output, ignoring the lack of keys\n"
-            "  }\n"
-            "  ,...\n"
-            "]\n"
-
-            "\nExamples\n"
-            + HelpExampleCli("listcontractunspent", "")
-            + HelpExampleCli("listcontractunspent", "6 9999999 \"[\\\"1PGFqEzfmQch1gKD3ra4k18PNj3tTUUSqg\\\",\\\"1LtvqCaApEdUGFkpKMM4MstjcaL4dKg8SP\\\"]\"")
-            + HelpExampleRpc("listcontractunspent", "6, 9999999 \"[\\\"1PGFqEzfmQch1gKD3ra4k18PNj3tTUUSqg\\\",\\\"1LtvqCaApEdUGFkpKMM4MstjcaL4dKg8SP\\\"]\"")
-            + HelpExampleCli("listcontractunspent", "6 9999999 '[]' true '{ \"maximumCount\": 5 }'")
-            + HelpExampleRpc("listcontractunspent", "6, 9999999, [] , true, { \"maximumCount\": 5 } ")
-        );
-
-    int nMinDepth = 1;
-    if (request.params.size() > 0 && !request.params[0].isNull()) {
-        RPCTypeCheckArgument(request.params[0], UniValue::VNUM);
-        nMinDepth = request.params[0].get_int();
-    }
-
-    int nMaxDepth = 9999999;
-    if (request.params.size() > 1 && !request.params[1].isNull()) {
-        RPCTypeCheckArgument(request.params[1], UniValue::VNUM);
-        nMaxDepth = request.params[1].get_int();
-    }
-
-    set<CNovoAddress> setAddress;
-    if (request.params.size() > 2 && !request.params[2].isNull()) {
-        RPCTypeCheckArgument(request.params[2], UniValue::VARR);
-        UniValue inputs = request.params[2].get_array();
-        for (unsigned int idx = 0; idx < inputs.size(); idx++) {
-            const UniValue& input = inputs[idx];
-            CNovoAddress address(input.get_str());
-            if (!address.IsValid())
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid Novo address: ")+input.get_str());
-            if (setAddress.count(address))
-                throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, duplicated address: ")+input.get_str());
-           setAddress.insert(address);
-        }
-    }
-
-    bool include_unsafe = true;
-    if (request.params.size() > 3 && !request.params[3].isNull()) {
-        RPCTypeCheckArgument(request.params[3], UniValue::VBOOL);
-        include_unsafe = request.params[3].get_bool();
-    }
-
-    CAmount nMinimumAmount = 0;
-    CAmount nMaximumAmount = MAX_MONEY;
-    CAmount nMinimumSumAmount = MAX_MONEY;
-    uint64_t nMaximumCount = 0;
-    bool fOnlyContract = true;
-
-    if (request.params.size() > 4) {
-        const UniValue& options = request.params[4].get_obj();
-
-        if (options.exists("maximumCount"))
-            nMaximumCount = options["maximumCount"].get_int64();
-    }
-
-    UniValue results(UniValue::VARR);
-    vector<COutput> vecOutputs;
-    assert(pwalletMain != NULL);
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-
-    pwalletMain->AvailableCoins(vecOutputs, !include_unsafe, NULL, fOnlyContract, nMinimumAmount, nMaximumAmount, nMinimumSumAmount, nMaximumCount, nMinDepth, nMaxDepth);
-    BOOST_FOREACH(const COutput& out, vecOutputs) {
-        CTxDestination address;
-        const CTxOut &txout = out.tx->tx->vout[out.i];
-        bool fValidAddress = ExtractDestination(txout.scriptPubKey, address);
-
-        if (setAddress.size() && (!fValidAddress || !setAddress.count(address)))
-            continue;
-
-        UniValue entry(UniValue::VOBJ);
-        entry.pushKV("txid", out.tx->GetHash().GetHex());
-        entry.pushKV("vout", out.i);
-
-        if (fValidAddress) {
-            entry.pushKV("address", CNovoAddress(address).ToString());
-
-            if (pwalletMain->mapAddressBook.count(address))
-                entry.pushKV("account", pwalletMain->mapAddressBook[address].name);
-
-            if (txout.scriptPubKey.IsPayToScriptHash()) {
-                const CScriptID& hash = boost::get<CScriptID>(address);
-                CScript redeemScript;
-                if (pwalletMain->GetCScript(hash, redeemScript))
-                    entry.pushKV("redeemScript", HexStr(redeemScript.begin(), redeemScript.end()));
-            }
-        }
-
-        entry.pushKV("scriptPubKey", HexStr(txout.scriptPubKey.begin(), txout.scriptPubKey.end()));
-        entry.pushKV("amount", ValueFromAmount(txout.nValue));
-        if (txout.IsContract()) {
-            entry.pushKV("contractType", CTxOut::ContractTypeString(txout.contractType));
-            entry.pushKV("contractID", txout.contractID.ToFullString());
-            CBigNum bnValue;
-            bnValue.SetHex(txout.contractValue.GetHex());
-            CBigNum bnSupply;
-            bnSupply.SetHex(txout.contractMaxSupply.GetHex());
-            entry.pushKV("contractValue", bnValue.ToString());
-            entry.pushKV("contractMaxSupply", bnSupply.ToString());
-            entry.pushKV("contractMetadata", txout.contractMetadata);
-        }
+        entry.pushKV("scriptPubKey", HexStr(scriptPubKey.begin(), scriptPubKey.end()));
+        entry.pushKV("amount", ValueFromAmount(out.tx->tx->vout[out.i].nValue));
         entry.pushKV("confirmations", out.nDepth);
         entry.pushKV("spendable", out.fSpendable);
         entry.pushKV("solvable", out.fSolvable);
@@ -3469,10 +2878,10 @@ UniValue bumpfee(const JSONRPCRequest& request)
     for (auto& input : tx.vin) {
         std::map<uint256, CWalletTx>::const_iterator mi = pwalletMain->mapWallet.find(input.prevout.hash);
         assert(mi != pwalletMain->mapWallet.end() && input.prevout.n < mi->second.tx->vout.size());
-        const CTxOut& txout = mi->second.tx->vout[input.prevout.n];
-        const CScript& scriptPubKey = txout.scriptPubKey;
+        const CScript& scriptPubKey = mi->second.tx->vout[input.prevout.n].scriptPubKey;
+        const CAmount& amount = mi->second.tx->vout[input.prevout.n].nValue;
         SignatureData sigdata;
-        if (!ProduceSignature(TransactionSignatureCreator(pwalletMain, &txNewConst, nIn, txout, SIGHASH_ALL), scriptPubKey, sigdata)) {
+        if (!ProduceSignature(TransactionSignatureCreator(pwalletMain, &txNewConst, nIn, amount, SIGHASH_ALL), scriptPubKey, sigdata)) {
             throw JSONRPCError(RPC_WALLET_ERROR, "Can't sign transaction.");
         }
         UpdateTransaction(tx, nIn, sigdata);
@@ -3567,15 +2976,11 @@ static const CRPCCommand commands[] =
     { "wallet",             "listsinceblock",           &listsinceblock,           false,  {"blockhash","target_confirmations","include_watchonly"} },
     { "wallet",             "listtransactions",         &listtransactions,         false,  {"account","count","skip","include_watchonly"} },
     { "wallet",             "listunspent",              &listunspent,              false,  {"minconf","maxconf","addresses","include_unsafe","query_options"} },
-    { "wallet",             "listcontractunspent",      &listcontractunspent,      false,  {"minconf","maxconf","addresses","include_unsafe","query_options"} },
     { "wallet",             "lockunspent",              &lockunspent,              true,   {"unlock","transactions"} },
     { "wallet",             "move",                     &movecmd,                  false,  {"fromaccount","toaccount","amount","minconf","comment"} },
     { "wallet",             "sendfrom",                 &sendfrom,                 false,  {"fromaccount","toaddress","amount","minconf","comment","comment_to"} },
     { "wallet",             "sendmany",                 &sendmany,                 false,  {"fromaccount","amounts","minconf","comment","subtractfeefrom"} },
     { "wallet",             "sendtoaddress",            &sendtoaddress,            false,  {"address","amount","comment","comment_to","subtractfeefromamount"} },
-    { "wallet",             "createtoken",              &createtoken,              false,  {"type", "maxsupply", "metadata", "address"} },
-    { "wallet",             "transfertoken",            &transfertoken,            false,  {"type", "id", "value", "address"} },
-    { "wallet",             "minttoken",                &minttoken,                false,  {"type", "id", "data", "address"} },
     { "wallet",             "setaccount",               &setaccount,               true,   {"address","account"} },
     { "wallet",             "settxfee",                 &settxfee,                 true,   {"amount"} },
     { "wallet",             "signmessage",              &signmessage,              true,   {"address","message"} },

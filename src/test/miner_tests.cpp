@@ -241,9 +241,9 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     BOOST_CHECK(pblocktemplate = BlockAssembler(chainparams).CreateNewBlock(scriptPubKey));
 
     const CAmount BLOCKSUBSIDY = 2000000*COIN;
-    const CAmount LOWFEE = 3 * COIN;
-    const CAmount HIGHFEE = 30 * COIN;
-    const CAmount HIGHERFEE = 250 *COIN;
+    const CAmount LOWFEE = 10*CENT;
+    const CAmount HIGHFEE = COIN;
+    const CAmount HIGHERFEE = 8*COIN;
 
     // block sigops > limit: 1000 CHECKMULTISIG + 1
     tx.vin.resize(1);

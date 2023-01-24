@@ -13,7 +13,6 @@
 #include "policy/policy.h"
 #include "primitives/transaction.h"
 #include "rpc/server.h"
-#include "script/bignum.h"
 #include "streams.h"
 #include "sync.h"
 #include "txmempool.h"
@@ -918,13 +917,8 @@ UniValue gettxout(const JSONRPCRequest& request)
             "3. include_mempool  (boolean, optional) Whether to include the mempool\n"
             "\nResult:\n"
             "{\n"
-            "  \"bestblock\" : \"hash\",       (string) the block hash\n"
-            "  \"confirmations\" : n,        (numeric) The number of confirmations\n"
-            "  \"contractType\" : \"FT\",      (string) The contract type\n"
-            "  \"contractID\" : \"id:vout\",   (string) The contract id\n"
-            "  \"contractValue\" : \"\",       (string) The contract value\n"
-            "  \"contractMaxSupply\" : \"\",   (string) The contract max supply\n"
-            "  \"contractMetadata\" : \"\",    (string) The contract metadata\n"
+            "  \"bestblock\" : \"hash\",    (string) the block hash\n"
+            "  \"confirmations\" : n,       (numeric) The number of confirmations\n"
             "  \"value\" : x.xxx,           (numeric) The transaction value in " + CURRENCY_UNIT + "\n"
             "  \"scriptPubKey\" : {         (json object)\n"
             "     \"asm\" : \"code\",       (string) \n"
@@ -932,12 +926,12 @@ UniValue gettxout(const JSONRPCRequest& request)
             "     \"reqSigs\" : n,          (numeric) Number of required signatures\n"
             "     \"type\" : \"pubkeyhash\", (string) The type, eg pubkeyhash\n"
             "     \"addresses\" : [          (array of string) array of " + CURRENCY_UNIT + " addresses\n"
-            "        \"address\"        (string) " + CURRENCY_UNIT + " address\n"
+            "        \"address\"     (string) " + CURRENCY_UNIT + " address\n"
             "        ,...\n"
             "     ]\n"
             "  },\n"
-            "  \"version\" : n,               (numeric) The version\n"
-            "  \"coinbase\" : true|false      (boolean) Coinbase or not\n"
+            "  \"version\" : n,            (numeric) The version\n"
+            "  \"coinbase\" : true|false   (boolean) Coinbase or not\n"
             "}\n"
 
             "\nExamples:\n"
@@ -981,22 +975,9 @@ UniValue gettxout(const JSONRPCRequest& request)
         ret.pushKV("confirmations", 0);
     else
         ret.pushKV("confirmations", pindex->nHeight - coins.nHeight + 1);
-
-    const CTxOut &txout = coins.vout[n];
-    if (txout.IsContract()) {
-        ret.pushKV("contractType", CTxOut::ContractTypeString(txout.contractType));
-        ret.pushKV("contractID", txout.contractID.ToFullString());
-        CBigNum bnValue;
-        bnValue.SetHex(txout.contractValue.GetHex());
-        CBigNum bnSupply;
-        bnSupply.SetHex(txout.contractMaxSupply.GetHex());
-        ret.pushKV("contractValue", bnValue.ToString());
-        ret.pushKV("contractMaxSupply", bnSupply.ToString());
-        ret.pushKV("contractMetadata", txout.contractMetadata);
-    }
-    ret.pushKV("value", ValueFromAmount(txout.nValue));
+    ret.pushKV("value", ValueFromAmount(coins.vout[n].nValue));
     UniValue o(UniValue::VOBJ);
-    ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
+    ScriptPubKeyToJSON(coins.vout[n].scriptPubKey, o, true);
     ret.pushKV("scriptPubKey", o);
     ret.pushKV("version", coins.nVersion);
     ret.pushKV("coinbase", coins.fCoinBase);

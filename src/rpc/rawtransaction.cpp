@@ -16,7 +16,6 @@
 #include "policy/policy.h"
 #include "primitives/transaction.h"
 #include "rpc/server.h"
-#include "script/bignum.h"
 #include "script/script.h"
 #include "script/script_error.h"
 #include "script/sign.h"
@@ -90,17 +89,6 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
     for (unsigned int i = 0; i < tx.vout.size(); i++) {
         const CTxOut& txout = tx.vout[i];
         UniValue out(UniValue::VOBJ);
-        if (txout.IsContract()) {
-            out.pushKV("contractType", CTxOut::ContractTypeString(txout.contractType));
-            out.pushKV("contractID", txout.contractID.ToFullString());
-            CBigNum bnValue;
-            bnValue.SetHex(txout.contractValue.GetHex());
-            CBigNum bnSupply;
-            bnSupply.SetHex(txout.contractMaxSupply.GetHex());
-            out.pushKV("contractValue", bnValue.ToString());
-            out.pushKV("contractMaxSupply", bnSupply.ToString());
-            out.pushKV("contractMetadata", txout.contractMetadata);
-        }
         out.pushKV("value", ValueFromAmount(txout.nValue));
         out.pushKV("n", (int64_t)i);
         UniValue o(UniValue::VOBJ);
@@ -169,11 +157,6 @@ UniValue getrawtransaction(const JSONRPCRequest& request)
             "  ],\n"
             "  \"vout\" : [              (array of json objects)\n"
             "     {\n"
-            "       \"contractType\" : \"FT\",       (string) The contract type\n"
-            "       \"contractID\" : \"id:vout\",    (string) The contract id\n"
-            "       \"contractValue\" : \"\",        (string) The contract value\n"
-            "       \"contractMaxSupply\" : \"\",    (string) The contract max supply\n"
-            "       \"contractMetadata\" : \"\",     (string) The contract metadata\n"
             "       \"value\" : x.xxx,            (numeric) The value in " + CURRENCY_UNIT + "\n"
             "       \"n\" : n,                    (numeric) index\n"
             "       \"scriptPubKey\" : {          (json object)\n"
@@ -380,14 +363,6 @@ UniValue createrawtransaction(const JSONRPCRequest& request)
             "2. \"outputs\"               (object, required) a json object with outputs\n"
             "    {\n"
             "      \"address\": x.xxx,    (numeric or string, required) The key is the novo address, the numeric value (can be string) is the " + CURRENCY_UNIT + " amount\n"
-            "      \"address\": {         (or object, required) The key is the novo address,  the json object value is contract output\n"
-            "         \"contractType\" : \"FT\",          (string, required) The contract type\n"
-            "         \"contractID\" : \"id:vout\",       (string, required) The contract id\n"
-            "         \"contractValueHex\" : \"hex\",     (string, required) The hex encoded contract value\n"
-            "         \"contractMaxSupplyHex\" : \"hex\", (string, required) The hex encoded contract max supply\n"
-            "         \"contractMetadata\" : \"\",        (string, required) The contract metadata\n"
-            "         \"value\" : x.xxx,            (numeric or string, required) The value in " + CURRENCY_UNIT + "\n"
-            "      },\n"
             "      \"data\": \"hex\"      (string, required) The key is \"data\", the value is hex encoded data\n"
             "      ,...\n"
             "    }\n"
@@ -397,10 +372,8 @@ UniValue createrawtransaction(const JSONRPCRequest& request)
 
             "\nExamples:\n"
             + HelpExampleCli("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"{\\\"address\\\":0.01}\"")
-            + HelpExampleCli("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"{\\\"address\\\":{\\\"contractType\\\":\\\"FT\\\",\\\"contractID_txid\\\":\\\"myid\\\",\\\"contractID_vout\\\":0,\\\"contractValueHex\\\":\\\"0000000000000000000000000000000000000000000000000000000000000003\\\",\\\"contractMaxSupplyHex\\\":\\\"0000000000000000000000000000000000000000000000000000000000000003\\\",\\\"contractMetadata\\\":\\\"ipfs://...\\\",\\\"value\\\":0.01}}\"")
             + HelpExampleCli("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"{\\\"data\\\":\\\"00010203\\\"}\"")
             + HelpExampleRpc("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\", \"{\\\"address\\\":0.01}\"")
-            + HelpExampleRpc("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"{\\\"address\\\":{\\\"contractType\\\":\\\"FT\\\",\\\"contractID_txid\\\":\\\"myid\\\",\\\"contractID_vout\\\":0,\\\"contractValueHex\\\":\\\"0000000000000000000000000000000000000000000000000000000000000003\\\",\\\"contractMaxSupplyHex\\\":\\\"0000000000000000000000000000000000000000000000000000000000000003\\\",\\\"contractMetadata\\\":\\\"ipfs://...\\\",\\\"value\\\":0.01}}\"")
             + HelpExampleRpc("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\", \"{\\\"data\\\":\\\"00010203\\\"}\"")
         );
 
@@ -469,34 +442,10 @@ UniValue createrawtransaction(const JSONRPCRequest& request)
             setAddress.insert(address);
 
             CScript scriptPubKey = GetScriptForDestination(address.Get());
+            CAmount nAmount = AmountFromValue(sendTo[name_]);
 
-            if (sendTo[name_].isObject()) {
-                const UniValue& contractOut = sendTo[name_].get_obj();
-                const UniValue& contractType_v = find_value(contractOut, "contractType");
-                uint64_t contractType = CTxOut::GetContractTypeByName(contractType_v.getValStr());
-                if (!contractType)
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, invalid contract type: ")+contractType_v.getValStr());
-                uint256 contractIDtxid = ParseHashO(contractOut, "contractID_txid");
-
-                const UniValue& contractIDvout_v = find_value(contractOut, "contractID_vout");
-                if (!contractIDvout_v.isNum())
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, missing contractID_vout key");
-                int contractIDvout = contractIDvout_v.get_int();
-
-                uint256 contractValue = ParseHashO(contractOut, "contractValueHex");
-                uint256 contractMaxSupply = ParseHashO(contractOut, "contractMaxSupplyHex");
-
-                const UniValue& contractMetadata_v = find_value(contractOut, "contractMetadata");
-                std::string contractMetadata = contractMetadata_v.getValStr();
-
-                CAmount nAmount = AmountFromValue(find_value(contractOut, "value"));
-                CTxOut out(contractType, COutPoint(contractIDtxid, contractIDvout), contractValue, contractMaxSupply, contractMetadata, nAmount, scriptPubKey);
-                rawTx.vout.push_back(out);
-            } else {
-                CAmount nAmount = AmountFromValue(sendTo[name_]);
-                CTxOut out(nAmount, scriptPubKey);
-                rawTx.vout.push_back(out);
-            }
+            CTxOut out(nAmount, scriptPubKey);
+            rawTx.vout.push_back(out);
         }
     }
 
@@ -534,11 +483,6 @@ UniValue decoderawtransaction(const JSONRPCRequest& request)
             "  ],\n"
             "  \"vout\" : [             (array of json objects)\n"
             "     {\n"
-            "       \"contractType\" : \"FT\",       (string) The contract type\n"
-            "       \"contractID\" : \"id:vout\",    (string) The contract id\n"
-            "       \"contractValue\" : \"\",        (string) The contract value\n"
-            "       \"contractMaxSupply\" : \"\",    (string) The contract max supply\n"
-            "       \"contractMetadata\" : \"\",     (string) The contract metadata\n"
             "       \"value\" : x.xxx,            (numeric) The value in " + CURRENCY_UNIT + "\n"
             "       \"n\" : n,                    (numeric) index\n"
             "       \"scriptPubKey\" : {          (json object)\n"
@@ -868,25 +812,25 @@ UniValue signrawtransaction(const JSONRPCRequest& request)
             TxInErrorToJSON(txin, vErrors, "Input not found or already spent");
             continue;
         }
-        const CTxOut& txout = coins->vout[txin.prevout.n];
-        const CScript& prevPubKey = txout.scriptPubKey;
+        const CScript& prevPubKey = coins->vout[txin.prevout.n].scriptPubKey;
+        const CAmount& amount = coins->vout[txin.prevout.n].nValue;
 
         SignatureData sigdata;
         // Only sign SIGHASH_SINGLE if there's a corresponding output:
         if (!fHashSingle || (i < mergedTx.vout.size()))
-            ProduceSignature(MutableTransactionSignatureCreator(&keystore, &mergedTx, i, txout, nHashType), prevPubKey, sigdata);
+            ProduceSignature(MutableTransactionSignatureCreator(&keystore, &mergedTx, i, amount, nHashType), prevPubKey, sigdata);
 
         // ... and merge in other signatures:
         BOOST_FOREACH(const CMutableTransaction& txv, txVariants) {
             if (txv.vin.size() > i) {
-                sigdata = CombineSignatures(prevPubKey, TransactionSignatureChecker(&txConst, i, txout), sigdata, DataFromTransaction(txv, i));
+                sigdata = CombineSignatures(prevPubKey, TransactionSignatureChecker(&txConst, i, amount), sigdata, DataFromTransaction(txv, i));
             }
         }
 
         UpdateTransaction(mergedTx, i, sigdata);
 
         ScriptError serror = SCRIPT_ERR_OK;
-        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&txConst, i, txout), &serror)) {
+        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&txConst, i, amount), &serror)) {
             TxInErrorToJSON(txin, vErrors, ScriptErrorString(serror));
         }
     }

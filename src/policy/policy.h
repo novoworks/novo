@@ -9,27 +9,26 @@
 #include "consensus/consensus.h"
 #include "script/interpreter.h"
 #include "script/standard.h"
-#include "amount.h"
 
 #include <string>
 
 class CCoinsViewCache;
 
-/** Recommended transaction fee per kilobyte by Novo developers
+/** Recommended transaction fee by Novo developers
   *
   * All fee defaults used throughout the client derive their
   * value from this base default.
   */
-static const CAmount RECOMMENDED_MIN_TX_FEE = 25 * COIN;
+static const CAmount RECOMMENDED_MIN_TX_FEE = 8000;
 
 /** Default for -blockmaxsize, which controls the maximum size of block the mining code will create **/
-static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 1500 * 1000; // 1.5mb
+static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 8 * 1000000;
 /** Default for -blockprioritysize, maximum space for zero/low-fee transactions **/
 static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = 0;
 /** Default for -blockmintxfee, which sets the minimum feerate for a transaction in blocks created by mining code **/
-static const unsigned int DEFAULT_BLOCK_MIN_TX_FEE = 25 * 10000;
+static const unsigned int DEFAULT_BLOCK_MIN_TX_FEE = 8000;
 /** The maximum size for transactions we're willing to relay/mine */
-static const unsigned int MAX_STANDARD_TX_SIZE = 1250 * 1000; // 1.25mb
+static const unsigned int MAX_STANDARD_TX_SIZE = 8 * 1000000;
 /** The minimum size for transactions we're willing to relay/mine */
 static const unsigned int MIN_STANDARD_TX_SIZE = 65;
 /** The maximum number of sigops we're willing to relay/mine in a single tx */
@@ -60,7 +59,7 @@ static const unsigned int DEFAULT_BYTES_PER_SIGOP = 20;
  * transaction output is required to pay additional fee for relay and inclusion
  * in blocks. Overridden by -dustlimit
  */
-static const CAmount DEFAULT_DUST_LIMIT = 5 * COIN;
+static const CAmount DEFAULT_DUST_LIMIT = 4368;
 /**
  * Novo: Default hard dust limit that is evaluated when considering whether
  * a transaction is standard. Transactions under this limit will not be accepted
@@ -71,7 +70,7 @@ static const CAmount DEFAULT_DUST_LIMIT = 5 * COIN;
  * this limit after prior releases were already not creating outputs below the
  * new threshold
  */
-static const CAmount DEFAULT_HARD_DUST_LIMIT = 5 * COIN;
+static const CAmount DEFAULT_HARD_DUST_LIMIT = 4368;
 
 /**
  * Standard script verification flags that standard transactions will comply
