@@ -1,11 +1,11 @@
-Novo
+Ai-Hero
 =================
 
-The goal of Novo is to create programmable money that is usable by everyone in the world.
+The goal of Ai-Hero is to create programmable money that is usable by everyone in the world.
 We believe this is a civilization-changing technology that will dramatically increase human flourishing, freedom, and prosperity.
 The project aims to achieve this goal by implementing a series of optimizations and protocol upgrades to enable programmable money to scale many orders of magnitude beyond current limits.
 
-What is Novo?
+What is Ai-Hero?
 ---------------------
 
 Novo is a digital currency that enables instant payments to anyone globally.
